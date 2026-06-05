@@ -34,11 +34,12 @@ function dirname(path: string): string {
 interface FileRowProps {
   file: FileChange;
   selected: boolean;
+  canApprove: boolean;
   onSelect: () => void;
   onToggleApprove: () => void;
 }
 
-function FileRow({ file, selected, onSelect, onToggleApprove }: FileRowProps) {
+function FileRow({ file, selected, canApprove, onSelect, onToggleApprove }: FileRowProps) {
   return (
     <div
       className={`group flex items-center gap-2 px-3 py-1.5 text-sm ${
@@ -60,13 +61,15 @@ function FileRow({ file, selected, onSelect, onToggleApprove }: FileRowProps) {
           <span className="text-red-500">-{file.deletions}</span>
         </span>
       </button>
-      <button
-        type="button"
-        className="shrink-0 rounded px-1.5 py-0.5 text-xs text-neutral-400 opacity-0 hover:bg-neutral-700 hover:text-neutral-100 group-hover:opacity-100"
-        onClick={onToggleApprove}
-      >
-        {file.staged ? 'Unapprove' : 'Approve'}
-      </button>
+      {canApprove ? (
+        <button
+          type="button"
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-neutral-400 opacity-0 hover:bg-neutral-700 hover:text-neutral-100 group-hover:opacity-100"
+          onClick={onToggleApprove}
+        >
+          {file.staged ? 'Unapprove' : 'Approve'}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -74,9 +77,10 @@ function FileRow({ file, selected, onSelect, onToggleApprove }: FileRowProps) {
 interface SectionProps {
   title: string;
   files: FileChange[];
+  canApprove: boolean;
 }
 
-function Section({ title, files }: SectionProps) {
+function Section({ title, files, canApprove }: SectionProps) {
   const selectedPath = useReviewStore((state) => state.selectedPath);
   const select = useReviewStore((state) => state.select);
   const approve = useReviewStore((state) => state.approve);
@@ -95,6 +99,7 @@ function Section({ title, files }: SectionProps) {
         <FileRow
           key={`${title}:${file.path}`}
           file={file}
+          canApprove={canApprove}
           selected={selectedPath === file.path}
           onSelect={() => select(file.path)}
           onToggleApprove={() =>
@@ -114,19 +119,24 @@ function Section({ title, files }: SectionProps) {
 
 export function Sidebar() {
   const model = useReviewStore((state) => state.model);
+  const working = useReviewStore((state) => state.compare.kind === 'working');
 
   return (
     <div className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-r border-neutral-800 bg-neutral-950 py-2">
       {model ? (
         <>
           <Section
-            title="Needs review"
+            title={working ? 'Needs review' : 'Changed'}
             files={model.unreviewed}
+            canApprove={working}
           />
-          <Section
-            title="Reviewed"
-            files={model.reviewed}
-          />
+          {working ? (
+            <Section
+              title="Reviewed"
+              files={model.reviewed}
+              canApprove={working}
+            />
+          ) : null}
           {model.unreviewed.length === 0 && model.reviewed.length === 0 ? (
             <div className="px-3 py-4 text-sm text-neutral-500">No changes</div>
           ) : null}

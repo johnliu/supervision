@@ -209,6 +209,63 @@ async function getWorkingReview(repoRoot: string): Promise<ReviewModel> {
   };
 }
 
+// git's well-known empty-tree object, used as the base for a root commit.
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+/** The parent of `ref`, or the empty tree if `ref` is a root commit. */
+async function resolveBase(repoRoot: string, ref: string): Promise<string> {
+  const res = await git(repoRoot, [
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    `${ref}^`,
+  ]);
+  return res.exitCode === 0 ? `${ref}^` : EMPTY_TREE;
+}
+
+/** File changes between two refs (no staging concept — all "unreviewed"). */
+async function refFileChanges(repoRoot: string, base: string, head: string): Promise<FileChange[]> {
+  const ns = await git(repoRoot, [
+    'diff',
+    '--name-status',
+    '-z',
+    base,
+    head,
+  ]);
+  if (ns.exitCode !== 0) {
+    throw new Error(ns.stderr.trim() || `git diff ${base} ${head} failed`);
+  }
+  const entries = parseNameStatusZ(ns.stdout);
+  return Promise.all(
+    entries.map(async (entry): Promise<FileChange> => {
+      const paths = entry.oldPath
+        ? [
+            entry.oldPath,
+            entry.path,
+          ]
+        : [
+            entry.path,
+          ];
+      const res = await git(repoRoot, [
+        'diff',
+        base,
+        head,
+        '--',
+        ...paths,
+      ]);
+      return {
+        path: entry.path,
+        oldPath: entry.oldPath,
+        status: entry.status,
+        patch: res.stdout,
+        ...countChanges(res.stdout),
+        staged: false,
+        untracked: false,
+      };
+    }),
+  );
+}
+
 export async function getReview(cwd: string, compare: CompareSpec): Promise<ReviewModel> {
   const repoRoot = await getRepoRoot(cwd);
   if (!repoRoot) {
@@ -217,8 +274,25 @@ export async function getReview(cwd: string, compare: CompareSpec): Promise<Revi
   if (compare.kind === 'working') {
     return getWorkingReview(repoRoot);
   }
-  // Ref comparison (commit / range) is implemented in Phase 5.
-  throw new Error(`Compare mode "${compare.kind}" is not implemented yet`);
+
+  const [base, head] =
+    compare.kind === 'commit'
+      ? [
+          await resolveBase(repoRoot, compare.ref),
+          compare.ref,
+        ]
+      : [
+          compare.base,
+          compare.head,
+        ];
+  // Ref comparisons have no index, so everything is "unreviewed".
+  const files = await refFileChanges(repoRoot, base, head);
+  return {
+    repoRoot,
+    compare,
+    reviewed: [],
+    unreviewed: files,
+  };
 }
 
 /** Approve = move changes into the index. */

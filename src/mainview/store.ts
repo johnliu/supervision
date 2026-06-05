@@ -19,6 +19,7 @@ interface ReviewState {
   refresh: () => Promise<void>;
   select: (path: string) => void;
   setDiffStyle: (style: DiffStyle) => void;
+  setCompare: (compare: CompareSpec) => Promise<void>;
   approve: (paths: string[]) => Promise<void>;
   unapprove: (paths: string[]) => Promise<void>;
   addComment: (input: { path: string; line: number; side: AnnotationSide; body: string }) => Promise<void>;
@@ -93,6 +94,14 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       set({
         diffStyle: style,
       });
+    },
+
+    setCompare: async (compare) => {
+      set({
+        compare,
+        selectedPath: null,
+      });
+      await get().refresh();
     },
 
     approve: async (paths) => {
