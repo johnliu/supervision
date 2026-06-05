@@ -1,7 +1,7 @@
 // Bun side of the typed RPC. Owns the "current repo" the UI is reviewing and
 // exposes git + comment operations to the webview.
 
-import { BrowserView } from 'electrobun/bun';
+import { BrowserView, Utils } from 'electrobun/bun';
 import type { SupervisionRPC } from '../shared/rpc';
 import * as comments from './comments';
 import * as git from './git';
@@ -52,7 +52,16 @@ export function createSupervisionRPC() {
         saveComment: async (input) => comments.addComment(await repoRoot(), input),
         resolveComment: async ({ id }) => comments.resolveComment(await repoRoot(), id),
         deleteComment: async ({ id }) => comments.deleteComment(await repoRoot(), id),
-        exportMarkdown: async () => comments.exportMarkdown(await repoRoot()),
+        exportMarkdown: async () => {
+          const result = await comments.exportMarkdown(await repoRoot());
+          // Copy on the Bun side — navigator.clipboard is unreliable in a webview.
+          try {
+            Utils.clipboardWriteText(result.markdown);
+          } catch (error) {
+            console.error('clipboardWriteText failed', error);
+          }
+          return result;
+        },
       },
     },
   });

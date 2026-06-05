@@ -150,13 +150,8 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     },
 
     exportReview: async () => {
-      const result = await api.exportMarkdown();
-      try {
-        await navigator.clipboard.writeText(result.markdown);
-      } catch {
-        // Clipboard may be unavailable; the file on disk is the fallback.
-      }
-      return result;
+      // The Bun side writes the review file and copies it to the system clipboard.
+      return api.exportMarkdown();
     },
   };
 });

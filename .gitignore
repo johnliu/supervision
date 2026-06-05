@@ -3,3 +3,6 @@ build/
 dist/
 artifacts/
 *.tsbuildinfo
+
+# Supervision's own runtime review data (created when reviewing this repo)
+.supervision/

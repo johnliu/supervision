@@ -21,9 +21,13 @@ export function Toolbar() {
   const openComments = comments.filter((comment) => comment.status === 'open').length;
 
   const onExport = async () => {
-    await exportReview();
-    setExported(true);
-    setTimeout(() => setExported(false), 2000);
+    try {
+      await exportReview();
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    } catch (error) {
+      console.error('Copy for LLM failed', error);
+    }
   };
 
   return (
