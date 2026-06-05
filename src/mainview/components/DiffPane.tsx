@@ -25,21 +25,27 @@ export function DiffPane() {
   const unapprove = useReviewStore((state) => state.unapprove);
   const working = useReviewStore((state) => state.compare.kind === 'working');
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [side, setSide] = useState<'new' | 'approved'>('new');
 
-  const file = useMemo(() => {
-    if (!model || !selectedPath) {
-      return null;
-    }
-    // Prefer the unstaged ("new") side when a file appears in both buckets.
-    const all = [
-      ...model.unreviewed,
-      ...model.reviewed,
-    ];
-    return all.find((entry) => entry.path === selectedPath) ?? null;
-  }, [
-    model,
-    selectedPath,
-  ]);
+  // A file edited again after approval appears in both buckets; let the user
+  // toggle between the staged ("approved") side and the unstaged ("new") side.
+  const unstagedEntry = useMemo(
+    () => model?.unreviewed.find((entry) => entry.path === selectedPath) ?? null,
+    [
+      model,
+      selectedPath,
+    ],
+  );
+  const stagedEntry = useMemo(
+    () => model?.reviewed.find((entry) => entry.path === selectedPath) ?? null,
+    [
+      model,
+      selectedPath,
+    ],
+  );
+  const hasBoth = unstagedEntry !== null && stagedEntry !== null;
+  const effectiveSide = side === 'approved' && stagedEntry ? 'approved' : 'new';
+  const file = effectiveSide === 'approved' ? stagedEntry : (unstagedEntry ?? stagedEntry);
 
   const fileComments = useMemo(
     () => comments.filter((comment) => comment.path === file?.path),
@@ -85,6 +91,24 @@ export function DiffPane() {
           <span className="text-green-500">+{file.additions}</span>{' '}
           <span className="text-red-500">−{file.deletions}</span>
         </span>
+        {hasBoth ? (
+          <div className="flex shrink-0 overflow-hidden rounded border border-neutral-700">
+            <button
+              type="button"
+              className={`px-2 py-0.5 ${effectiveSide === 'new' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-400'}`}
+              onClick={() => setSide('new')}
+            >
+              New
+            </button>
+            <button
+              type="button"
+              className={`px-2 py-0.5 ${effectiveSide === 'approved' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-400'}`}
+              onClick={() => setSide('approved')}
+            >
+              Approved
+            </button>
+          </div>
+        ) : null}
         {working ? (
           <button
             type="button"
