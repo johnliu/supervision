@@ -1,9 +1,9 @@
 // Global UI state. Wraps the RPC calls and keeps the current ReviewModel,
-// selection, and diff-view preference. Bun-pushed `workingTreeChanged` messages
-// trigger an automatic refresh.
+// comments, selection, and diff-view preference. Bun-pushed `workingTreeChanged`
+// messages trigger an automatic refresh.
 
 import { create } from 'zustand';
-import type { CompareSpec, ReviewModel } from '../shared/types';
+import type { AnnotationSide, Comment, CompareSpec, ReviewModel } from '../shared/types';
 import { api, onWorkingTreeChanged } from './rpc';
 
 export type DiffStyle = 'split' | 'unified';
@@ -12,6 +12,7 @@ interface ReviewState {
   loading: boolean;
   error: string | null;
   model: ReviewModel | null;
+  comments: Comment[];
   compare: CompareSpec;
   selectedPath: string | null;
   diffStyle: DiffStyle;
@@ -20,6 +21,13 @@ interface ReviewState {
   setDiffStyle: (style: DiffStyle) => void;
   approve: (paths: string[]) => Promise<void>;
   unapprove: (paths: string[]) => Promise<void>;
+  addComment: (input: { path: string; line: number; side: AnnotationSide; body: string }) => Promise<void>;
+  resolveComment: (id: string) => Promise<void>;
+  deleteComment: (id: string) => Promise<void>;
+  exportReview: () => Promise<{
+    markdown: string;
+    path: string;
+  }>;
 }
 
 function pickSelection(model: ReviewModel, current: string | null): string | null {
@@ -42,6 +50,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     loading: false,
     error: null,
     model: null,
+    comments: [],
     compare: {
       kind: 'working',
     },
@@ -54,11 +63,15 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         error: null,
       });
       try {
-        const model = await api.getReview({
-          compare: get().compare,
-        });
+        const [model, comments] = await Promise.all([
+          api.getReview({
+            compare: get().compare,
+          }),
+          api.getComments(),
+        ]);
         set({
           model,
+          comments,
           selectedPath: pickSelection(model, get().selectedPath),
           loading: false,
         });
@@ -100,6 +113,41 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         model,
         selectedPath: pickSelection(model, get().selectedPath),
       });
+    },
+
+    addComment: async (input) => {
+      const comments = await api.saveComment(input);
+      set({
+        comments,
+      });
+    },
+
+    resolveComment: async (id) => {
+      const comments = await api.resolveComment({
+        id,
+      });
+      set({
+        comments,
+      });
+    },
+
+    deleteComment: async (id) => {
+      const comments = await api.deleteComment({
+        id,
+      });
+      set({
+        comments,
+      });
+    },
+
+    exportReview: async () => {
+      const result = await api.exportMarkdown();
+      try {
+        await navigator.clipboard.writeText(result.markdown);
+      } catch {
+        // Clipboard may be unavailable; the file on disk is the fallback.
+      }
+      return result;
     },
   };
 });

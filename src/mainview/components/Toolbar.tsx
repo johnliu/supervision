@@ -1,17 +1,28 @@
-// Top toolbar: shows the repo, toggles unified/split, refreshes, and approves
-// all pending files at once.
+// Top toolbar: shows the repo, toggles unified/split, refreshes, approves all
+// pending files, and exports open comments for the LLM (clipboard + file).
 
+import { useState } from 'react';
 import { useReviewStore } from '../store';
 
 export function Toolbar() {
   const model = useReviewStore((state) => state.model);
+  const comments = useReviewStore((state) => state.comments);
   const diffStyle = useReviewStore((state) => state.diffStyle);
   const setDiffStyle = useReviewStore((state) => state.setDiffStyle);
   const refresh = useReviewStore((state) => state.refresh);
   const approve = useReviewStore((state) => state.approve);
+  const exportReview = useReviewStore((state) => state.exportReview);
   const loading = useReviewStore((state) => state.loading);
+  const [exported, setExported] = useState(false);
 
   const pendingPaths = model?.unreviewed.map((file) => file.path) ?? [];
+  const openComments = comments.filter((comment) => comment.status === 'open').length;
+
+  const onExport = async () => {
+    await exportReview();
+    setExported(true);
+    setTimeout(() => setExported(false), 2000);
+  };
 
   return (
     <div className="flex h-11 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-3">
@@ -35,6 +46,15 @@ export function Toolbar() {
             Unified
           </button>
         </div>
+
+        <button
+          type="button"
+          className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+          disabled={openComments === 0}
+          onClick={onExport}
+        >
+          {exported ? 'Copied!' : `Copy for LLM (${openComments})`}
+        </button>
 
         <button
           type="button"
