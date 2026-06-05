@@ -1,5 +1,7 @@
 import { BrowserWindow, Updater } from 'electrobun/bun';
-import { createSupervisionRPC } from './rpc';
+import { getRepoRoot } from './git';
+import { createSupervisionRPC, getCurrentRepo } from './rpc';
+import { watchWorkingTree } from './watcher';
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -37,8 +39,17 @@ const mainWindow = new BrowserWindow({
   rpc,
 });
 
-// Kept for the Phase 3 working-tree watcher, which will push
-// `rpc.send.workingTreeChanged()` to the webview on file changes.
 export { mainWindow, rpc };
+
+// Watch the repo so LLM edits made after launch refresh the review automatically.
+const repoRoot = await getRepoRoot(getCurrentRepo());
+if (repoRoot) {
+  watchWorkingTree(repoRoot, () => {
+    rpc.send.workingTreeChanged();
+  });
+  console.log(`Watching ${repoRoot} for changes`);
+} else {
+  console.log(`No git repo at ${getCurrentRepo()}; file watching disabled`);
+}
 
 console.log('Supervision started!');
