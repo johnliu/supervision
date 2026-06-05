@@ -27,8 +27,10 @@ export interface FileChange {
   /** Previous path, present only for renames. */
   oldPath?: string;
   status: FileStatus;
-  /** A single-file unified diff, fed directly to <PatchDiff patch=... />. */
-  patch: string;
+  /** Old/new full file contents, fed to <MultiFileDiff/> (enables context
+   * expansion). Empty string means the file is absent on that side. */
+  oldContents: string;
+  newContents: string;
   additions: number;
   deletions: number;
   /** True when this entry is the staged (already-approved) side of the file. */

@@ -1,8 +1,9 @@
 // Git data layer. Runs the git CLI via Bun's shell and shapes the output into
-// the ReviewModel the UI consumes. We fetch one patch per file (rather than
-// splitting a combined diff) so each FileChange carries a ready-to-render,
-// single-file unified diff.
+// the ReviewModel the UI consumes. Each FileChange carries the old/new full
+// file contents (so the diff viewer can expand collapsed context) plus the
+// +/- line counts (derived from the per-file patch).
 
+import { join } from 'node:path';
 import { $ } from 'bun';
 import type { CompareSpec, FileChange, FileStatus, ReviewModel } from '../shared/types';
 
@@ -26,6 +27,21 @@ async function git(repo: string, args: string[]): Promise<GitResult> {
     stderr: res.stderr.toString(),
     exitCode: res.exitCode,
   };
+}
+
+/** Contents of a blob at `rev` ('HEAD', '' for the index, a sha…); '' if absent. */
+async function showContents(repo: string, rev: string, path: string): Promise<string> {
+  const res = await git(repo, [
+    'show',
+    `${rev}:${path}`,
+  ]);
+  return res.exitCode === 0 ? res.stdout : '';
+}
+
+/** Working-tree file contents; '' if the file is gone. */
+async function workingFile(repo: string, path: string): Promise<string> {
+  const file = Bun.file(join(repo, path));
+  return (await file.exists()) ? file.text() : '';
 }
 
 export async function getRepoRoot(cwd: string): Promise<string | null> {
@@ -140,13 +156,42 @@ async function untrackedPatch(repo: string, path: string): Promise<string> {
   return res.stdout;
 }
 
+/**
+ * Old/new contents for a tracked change. Unstaged compares the index → working
+ * tree; staged compares HEAD → index. Renames read the old name on the old side.
+ */
+async function trackedContents(
+  repo: string,
+  staged: boolean,
+  entry: NameStatusEntry,
+): Promise<{
+  oldContents: string;
+  newContents: string;
+}> {
+  const oldName = entry.oldPath ?? entry.path;
+  if (staged) {
+    return {
+      oldContents: await showContents(repo, 'HEAD', oldName),
+      newContents: await showContents(repo, '', entry.path),
+    };
+  }
+  return {
+    oldContents: await showContents(repo, '', oldName),
+    newContents: entry.status === 'deleted' ? '' : await workingFile(repo, entry.path),
+  };
+}
+
 async function toFileChange(repo: string, entry: NameStatusEntry, staged: boolean): Promise<FileChange> {
-  const patch = await trackedPatch(repo, staged, entry);
+  const [patch, contents] = await Promise.all([
+    trackedPatch(repo, staged, entry),
+    trackedContents(repo, staged, entry),
+  ]);
   return {
     path: entry.path,
     oldPath: entry.oldPath,
     status: entry.status,
-    patch,
+    oldContents: contents.oldContents,
+    newContents: contents.newContents,
     ...countChanges(patch),
     staged,
     untracked: false,
@@ -183,11 +228,15 @@ async function getWorkingReview(repoRoot: string): Promise<ReviewModel> {
     Promise.all(unstagedEntries.map((e) => toFileChange(repoRoot, e, false))),
     Promise.all(
       untrackedPaths.map(async (p): Promise<FileChange> => {
-        const patch = await untrackedPatch(repoRoot, p);
+        const [patch, newContents] = await Promise.all([
+          untrackedPatch(repoRoot, p),
+          workingFile(repoRoot, p),
+        ]);
         return {
           path: p,
           status: 'untracked',
-          patch,
+          oldContents: '',
+          newContents,
           ...countChanges(patch),
           staged: false,
           untracked: true,
@@ -246,18 +295,23 @@ async function refFileChanges(repoRoot: string, base: string, head: string): Pro
         : [
             entry.path,
           ];
-      const res = await git(repoRoot, [
-        'diff',
-        base,
-        head,
-        '--',
-        ...paths,
+      const [res, oldContents, newContents] = await Promise.all([
+        git(repoRoot, [
+          'diff',
+          base,
+          head,
+          '--',
+          ...paths,
+        ]),
+        showContents(repoRoot, base, entry.oldPath ?? entry.path),
+        showContents(repoRoot, head, entry.path),
       ]);
       return {
         path: entry.path,
         oldPath: entry.oldPath,
         status: entry.status,
-        patch: res.stdout,
+        oldContents,
+        newContents,
         ...countChanges(res.stdout),
         staged: false,
         untracked: false,

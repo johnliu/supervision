@@ -2,7 +2,7 @@
 // between unified and split. Clicking a line number opens an inline comment
 // composer; existing comments render inline as annotations.
 
-import { type DiffLineAnnotation, PatchDiff, Virtualizer } from '@pierre/diffs/react';
+import { type DiffLineAnnotation, MultiFileDiff, Virtualizer } from '@pierre/diffs/react';
 import { useMemo, useState } from 'react';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread, type Draft } from './CommentThread';
@@ -128,9 +128,16 @@ export function DiffPane() {
         ) : null}
       </div>
       <Virtualizer className="min-h-0 flex-1 overflow-auto bg-neutral-950">
-        <PatchDiff<AnnotationMeta>
+        <MultiFileDiff<AnnotationMeta>
           key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
-          patch={file.patch}
+          oldFile={{
+            name: file.oldPath ?? file.path,
+            contents: file.oldContents,
+          }}
+          newFile={{
+            name: file.path,
+            contents: file.newContents,
+          }}
           options={{
             diffStyle,
             theme: {
