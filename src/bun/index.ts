@@ -1,4 +1,5 @@
 import { BrowserWindow, Updater } from 'electrobun/bun';
+import { createSupervisionRPC } from './rpc';
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -20,18 +21,24 @@ async function getMainViewUrl(): Promise<string> {
   return 'views://mainview/index.html';
 }
 
-// Create the main application window
+// Create the main application window with the typed Supervision RPC attached.
 const url = await getMainViewUrl();
+const rpc = createSupervisionRPC();
 
-const _mainWindow = new BrowserWindow({
-  title: 'React + Tailwind + Vite',
+const mainWindow = new BrowserWindow({
+  title: 'Supervision',
   url,
   frame: {
-    width: 900,
-    height: 700,
-    x: 200,
-    y: 200,
+    width: 1400,
+    height: 900,
+    x: 100,
+    y: 100,
   },
+  rpc,
 });
 
-console.log('React Tailwind Vite app started!');
+// Kept for the Phase 3 working-tree watcher, which will push
+// `rpc.send.workingTreeChanged()` to the webview on file changes.
+export { mainWindow, rpc };
+
+console.log('Supervision started!');

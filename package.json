@@ -12,9 +12,13 @@
     "check": "biome check ."
   },
   "dependencies": {
+    "@pierre/diffs": "^1.2.7",
+    "@pierre/trees": "1.0.0-beta.4",
+    "chokidar": "^5.0.0",
     "electrobun": "1.18.1",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
