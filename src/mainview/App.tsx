@@ -39,21 +39,22 @@ function App() {
             <li className="flex items-start gap-2">
               <span className="text-indigo-500 font-bold">1.</span>
               <span>
-                Run <code className="bg-gray-100 px-2 py-1 rounded text-sm">bun run dev</code> for development without
-                HMR
+                Run <code className="bg-gray-100 px-2 py-1 rounded-sm text-sm">bun run dev</code> for development
+                without HMR
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-indigo-500 font-bold">2.</span>
               <span>
-                Run <code className="bg-gray-100 px-2 py-1 rounded text-sm">bun run dev:hmr</code> for development with
-                hot reload
+                Run <code className="bg-gray-100 px-2 py-1 rounded-sm text-sm">bun run dev:hmr</code> for development
+                with hot reload
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-indigo-500 font-bold">3.</span>
               <span>
-                Run <code className="bg-gray-100 px-2 py-1 rounded text-sm">bun run build</code> to build for production
+                Run <code className="bg-gray-100 px-2 py-1 rounded-sm text-sm">bun run build</code> to build for
+                production
               </span>
             </li>
           </ul>
@@ -81,10 +82,10 @@ function App() {
           </div>
         </div>
 
-        <div className="text-center text-white/80 mt-10 p-6 bg-white/10 rounded-lg backdrop-blur">
+        <div className="text-center text-white/80 mt-10 p-6 bg-white/10 rounded-lg backdrop-blur-sm">
           <p>
-            Edit <code className="bg-white/20 px-2 py-1 rounded text-sm">src/mainview/App.tsx</code> and save to see HMR
-            in action
+            Edit <code className="bg-white/20 px-2 py-1 rounded-sm text-sm">src/mainview/App.tsx</code> and save to see
+            HMR in action
           </p>
         </div>
       </div>
