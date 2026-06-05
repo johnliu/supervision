@@ -15,7 +15,8 @@
       "WebFetch(domain:diffs.com)",
       "Bash(echo \"===TYPECHECK EXIT: $?===\")",
       "Bash(echo \"===VITE BUILD EXIT: $?===\")",
-      "Bash(echo \"===EXIT: $?===\")"
+      "Bash(echo \"===EXIT: $?===\")",
+      "WebFetch(domain:trees.software)"
     ]
   }
 }

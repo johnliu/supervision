@@ -137,7 +137,7 @@ export function DiffPane() {
               dark: 'pierre-dark',
               light: 'pierre-light',
             },
-            themeType: 'system',
+            themeType: 'dark',
             onLineNumberClick: (props) => {
               setDraft({
                 path: file.path,
