@@ -1,145 +1,119 @@
-// Changed-files sidebar, split into "Needs review" (unstaged + untracked) and
-// "Reviewed" (staged). A simple list for now; Phase 2 upgrades this to
-// @pierre/trees. Each row shows status + line counts and an approve toggle.
+// Changed-files sidebar built on @pierre/trees: a real file tree per review
+// group (Needs review / Reviewed), colored by git status, with +/- counts as a
+// row decoration. Approve/Unapprove lives on the diff header (tree rows can't
+// host React controls). useFileTree builds its model once, so each tree is
+// keyed by its path set and remounts when files are added/removed/approved.
 
-import type { FileChange, FileStatus } from '../../shared/types';
+import { FileTree, useFileTree } from '@pierre/trees/react';
+import { useMemo } from 'react';
+import type { FileChange } from '../../shared/types';
 import { useReviewStore } from '../store';
 
-const STATUS_LABEL: Record<FileStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  untracked: 'U',
-};
-
-const STATUS_COLOR: Record<FileStatus, string> = {
-  added: 'text-green-400',
-  modified: 'text-amber-400',
-  deleted: 'text-red-400',
-  renamed: 'text-blue-400',
-  untracked: 'text-green-400',
-};
-
-function basename(path: string): string {
-  const parts = path.split('/');
-  return parts[parts.length - 1];
-}
-
-function dirname(path: string): string {
-  const idx = path.lastIndexOf('/');
-  return idx === -1 ? '' : path.slice(0, idx);
-}
-
-interface FileRowProps {
-  file: FileChange;
-  selected: boolean;
-  canApprove: boolean;
-  onSelect: () => void;
-  onToggleApprove: () => void;
-}
-
-function FileRow({ file, selected, canApprove, onSelect, onToggleApprove }: FileRowProps) {
-  return (
-    <div
-      className={`group flex items-center gap-2 px-3 py-1.5 text-sm ${
-        selected ? 'bg-neutral-800' : 'hover:bg-neutral-900'
-      }`}
-    >
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        onClick={onSelect}
-      >
-        <span className={`w-3 shrink-0 font-mono text-xs ${STATUS_COLOR[file.status]}`}>
-          {STATUS_LABEL[file.status]}
-        </span>
-        <span className="truncate text-neutral-200">{basename(file.path)}</span>
-        <span className="truncate text-xs text-neutral-500">{dirname(file.path)}</span>
-        <span className="ml-auto shrink-0 font-mono text-xs text-neutral-500">
-          <span className="text-green-500">+{file.additions}</span>{' '}
-          <span className="text-red-500">-{file.deletions}</span>
-        </span>
-      </button>
-      {canApprove ? (
-        <button
-          type="button"
-          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-neutral-400 opacity-0 hover:bg-neutral-700 hover:text-neutral-100 group-hover:opacity-100"
-          onClick={onToggleApprove}
-        >
-          {file.staged ? 'Unapprove' : 'Approve'}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-interface SectionProps {
-  title: string;
-  files: FileChange[];
-  canApprove: boolean;
-}
-
-function Section({ title, files, canApprove }: SectionProps) {
-  const selectedPath = useReviewStore((state) => state.selectedPath);
-  const select = useReviewStore((state) => state.select);
-  const approve = useReviewStore((state) => state.approve);
-  const unapprove = useReviewStore((state) => state.unapprove);
-
-  if (files.length === 0) {
-    return null;
+/** Number of rows a fully expanded tree of these paths will show (files + dirs). */
+function rowCount(paths: string[]): number {
+  const dirs = new Set<string>();
+  for (const path of paths) {
+    const segments = path.split('/');
+    for (let i = 1; i < segments.length; i++) {
+      dirs.add(segments.slice(0, i).join('/'));
+    }
   }
+  return paths.length + dirs.size;
+}
+
+function ChangedFilesTree({ title, files }: { title: string; files: FileChange[] }) {
+  const select = useReviewStore((state) => state.select);
+  const selectedPath = useReviewStore((state) => state.selectedPath);
+
+  const { paths, gitStatus, counts } = useMemo(
+    () => ({
+      paths: files.map((file) => file.path),
+      gitStatus: files.map((file) => ({
+        path: file.path,
+        status: file.status,
+      })),
+      counts: new Map(
+        files.map((file) => [
+          file.path,
+          `+${file.additions} −${file.deletions}`,
+        ]),
+      ),
+    }),
+    [
+      files,
+    ],
+  );
+
+  const { model } = useFileTree({
+    paths,
+    gitStatus,
+    flattenEmptyDirectories: false,
+    initialExpansion: 'open',
+    initialVisibleRowCount: Math.min(rowCount(paths), 25),
+    initialSelectedPaths:
+      selectedPath && paths.includes(selectedPath)
+        ? [
+            selectedPath,
+          ]
+        : undefined,
+    onSelectionChange: (selected) => {
+      if (selected[0]) {
+        select(selected[0]);
+      }
+    },
+    renderRowDecoration: ({ row }) =>
+      row.kind === 'file'
+        ? {
+            text: counts.get(row.path) ?? '',
+          }
+        : null,
+  });
 
   return (
-    <div className="mb-2">
-      <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        {title} ({files.length})
-      </div>
-      {files.map((file) => (
-        <FileRow
-          key={`${title}:${file.path}`}
-          file={file}
-          canApprove={canApprove}
-          selected={selectedPath === file.path}
-          onSelect={() => select(file.path)}
-          onToggleApprove={() =>
-            file.staged
-              ? unapprove([
-                  file.path,
-                ])
-              : approve([
-                  file.path,
-                ])
-          }
-        />
-      ))}
-    </div>
+    <FileTree
+      model={model}
+      className="shrink-0 text-sm text-neutral-200"
+      header={
+        <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          {title} ({files.length})
+        </div>
+      }
+    />
   );
+}
+
+function signature(files: FileChange[]): string {
+  return files
+    .map((file) => file.path)
+    .sort()
+    .join('\n');
 }
 
 export function Sidebar() {
   const model = useReviewStore((state) => state.model);
   const working = useReviewStore((state) => state.compare.kind === 'working');
 
+  const empty = model && model.unreviewed.length === 0 && model.reviewed.length === 0;
+
   return (
     <div className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-r border-neutral-800 bg-neutral-950 py-2">
       {model ? (
         <>
-          <Section
-            title={working ? 'Needs review' : 'Changed'}
-            files={model.unreviewed}
-            canApprove={working}
-          />
-          {working ? (
-            <Section
-              title="Reviewed"
-              files={model.reviewed}
-              canApprove={working}
+          {model.unreviewed.length > 0 ? (
+            <ChangedFilesTree
+              key={`unreviewed:${signature(model.unreviewed)}`}
+              title={working ? 'Needs review' : 'Changed'}
+              files={model.unreviewed}
             />
           ) : null}
-          {model.unreviewed.length === 0 && model.reviewed.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-neutral-500">No changes</div>
+          {working && model.reviewed.length > 0 ? (
+            <ChangedFilesTree
+              key={`reviewed:${signature(model.reviewed)}`}
+              title="Reviewed"
+              files={model.reviewed}
+            />
           ) : null}
+          {empty ? <div className="px-3 py-4 text-sm text-neutral-500">No changes</div> : null}
         </>
       ) : (
         <div className="px-3 py-4 text-sm text-neutral-500">Loading…</div>

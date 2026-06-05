@@ -21,6 +21,9 @@ export function DiffPane() {
   const selectedPath = useReviewStore((state) => state.selectedPath);
   const diffStyle = useReviewStore((state) => state.diffStyle);
   const comments = useReviewStore((state) => state.comments);
+  const approve = useReviewStore((state) => state.approve);
+  const unapprove = useReviewStore((state) => state.unapprove);
+  const working = useReviewStore((state) => state.compare.kind === 'working');
   const [draft, setDraft] = useState<Draft | null>(null);
 
   const file = useMemo(() => {
@@ -75,45 +78,71 @@ export function DiffPane() {
   ];
 
   return (
-    <Virtualizer className="h-full overflow-auto bg-neutral-950">
-      <PatchDiff<AnnotationMeta>
-        key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
-        patch={file.patch}
-        options={{
-          diffStyle,
-          theme: {
-            dark: 'pierre-dark',
-            light: 'pierre-light',
-          },
-          themeType: 'system',
-          onLineNumberClick: (props) => {
-            setDraft({
-              path: file.path,
-              line: props.lineNumber,
-              side: props.annotationSide,
-            });
-          },
-        }}
-        lineAnnotations={annotations}
-        renderAnnotation={(annotation) => {
-          const meta = annotation.metadata;
-          if (meta.kind === 'draft') {
-            return (
-              <CommentComposer
-                draft={{
-                  path: file.path,
-                  line: annotation.lineNumber,
-                  side: annotation.side,
-                }}
-                onClose={() => setDraft(null)}
-              />
-            );
-          }
-          const comment = fileComments.find((entry) => entry.id === meta.id);
-          return comment ? <CommentThread comment={comment} /> : null;
-        }}
-        disableWorkerPool
-      />
-    </Virtualizer>
+    <div className="flex h-full flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-3 text-xs">
+        <span className="truncate text-neutral-300">{file.path}</span>
+        <span className="shrink-0 font-mono text-neutral-500">
+          <span className="text-green-500">+{file.additions}</span>{' '}
+          <span className="text-red-500">−{file.deletions}</span>
+        </span>
+        {working ? (
+          <button
+            type="button"
+            className="ml-auto shrink-0 rounded border border-neutral-700 px-2 py-0.5 text-neutral-300 hover:bg-neutral-800"
+            onClick={() =>
+              file.staged
+                ? unapprove([
+                    file.path,
+                  ])
+                : approve([
+                    file.path,
+                  ])
+            }
+          >
+            {file.staged ? 'Unapprove' : 'Approve'}
+          </button>
+        ) : null}
+      </div>
+      <Virtualizer className="min-h-0 flex-1 overflow-auto bg-neutral-950">
+        <PatchDiff<AnnotationMeta>
+          key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
+          patch={file.patch}
+          options={{
+            diffStyle,
+            theme: {
+              dark: 'pierre-dark',
+              light: 'pierre-light',
+            },
+            themeType: 'system',
+            onLineNumberClick: (props) => {
+              setDraft({
+                path: file.path,
+                line: props.lineNumber,
+                side: props.annotationSide,
+              });
+            },
+          }}
+          lineAnnotations={annotations}
+          renderAnnotation={(annotation) => {
+            const meta = annotation.metadata;
+            if (meta.kind === 'draft') {
+              return (
+                <CommentComposer
+                  draft={{
+                    path: file.path,
+                    line: annotation.lineNumber,
+                    side: annotation.side,
+                  }}
+                  onClose={() => setDraft(null)}
+                />
+              );
+            }
+            const comment = fileComments.find((entry) => entry.id === meta.id);
+            return comment ? <CommentThread comment={comment} /> : null;
+          }}
+          disableWorkerPool
+        />
+      </Virtualizer>
+    </div>
   );
 }
