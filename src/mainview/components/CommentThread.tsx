@@ -5,6 +5,8 @@
 import { useState } from 'react';
 import type { AnnotationSide, Comment } from '../../shared/types';
 import { useReviewStore } from '../store';
+import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
 
 export interface Draft {
   path: string;
@@ -18,30 +20,31 @@ export function CommentThread({ comment }: { comment: Comment }) {
   const resolved = comment.status === 'resolved';
 
   return (
-    <div className="my-1 rounded border border-neutral-700 bg-neutral-900 p-2 text-sm">
-      <div className="mb-1 flex items-center gap-2 text-xs text-neutral-500">
-        <span className={resolved ? 'text-green-500' : 'text-amber-400'}>{resolved ? 'Resolved' : 'Comment'}</span>
+    <div className="my-1 rounded-md border border-border bg-card p-2 text-sm text-card-foreground shadow-sm">
+      <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <span className={resolved ? 'text-emerald-500' : 'text-amber-500'}>{resolved ? 'Resolved' : 'Comment'}</span>
         <span>· line {comment.line}</span>
         <div className="ml-auto flex gap-1">
           {resolved ? null : (
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => resolveComment(comment.id)}
             >
               Resolve
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
-            className="rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-700 hover:text-red-300"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive"
             onClick={() => deleteComment(comment.id)}
           >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
-      <div className="whitespace-pre-wrap text-neutral-200">{comment.body}</div>
+      <div className="whitespace-pre-wrap">{comment.body}</div>
     </div>
   );
 }
@@ -66,14 +69,13 @@ export function CommentComposer({ draft, onClose }: { draft: Draft; onClose: () 
   };
 
   return (
-    <div className="my-1 rounded border border-blue-700 bg-neutral-900 p-2">
-      <textarea
-        // biome-ignore lint/a11y/noAutofocus: composer opens on explicit user action
+    <div className="my-1 rounded-md border border-ring/50 bg-card p-2 shadow-sm">
+      <Textarea
         autoFocus
         value={body}
         onChange={(event) => setBody(event.target.value)}
         placeholder={`Comment on line ${draft.line} (⌘/Ctrl+Enter to save)`}
-        className="h-16 w-full resize-none rounded bg-neutral-950 p-1.5 text-sm text-neutral-100 outline-none"
+        className="h-16 resize-none text-sm"
         onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
             void submit();
@@ -82,21 +84,20 @@ export function CommentComposer({ draft, onClose }: { draft: Draft; onClose: () 
           }
         }}
       />
-      <div className="mt-1 flex justify-end gap-1 text-xs">
-        <button
-          type="button"
-          className="rounded px-2 py-0.5 text-neutral-400 hover:bg-neutral-700"
+      <div className="mt-1.5 flex justify-end gap-1.5">
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onClose}
         >
           Cancel
-        </button>
-        <button
-          type="button"
-          className="rounded bg-blue-700 px-2 py-0.5 text-neutral-100 hover:bg-blue-600"
+        </Button>
+        <Button
+          size="sm"
           onClick={() => void submit()}
         >
           Comment
-        </button>
+        </Button>
       </div>
     </div>
   );

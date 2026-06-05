@@ -16,24 +16,23 @@ import { useReviewStore } from '../store';
 const TREE_STYLE = {
   ...themeToTreeStyles({
     type: 'dark',
-    bg: '#0a0a0a',
-    fg: '#e5e5e5',
   }),
   '--trees-bg-override': 'transparent',
-  '--trees-bg-muted-override': '#171717',
-  '--trees-fg-override': '#e5e5e5',
-  '--trees-fg-muted-override': '#737373',
-  '--trees-border-color-override': '#262626',
-  '--trees-accent-override': '#60a5fa',
-  '--trees-selected-bg-override': '#262626',
-  '--trees-selected-fg-override': '#f5f5f5',
-  '--trees-indent-guide-bg-override': '#262626',
-  '--trees-git-added-color-override': '#4ade80',
-  '--trees-git-modified-color-override': '#fbbf24',
-  '--trees-git-deleted-color-override': '#f87171',
-  '--trees-git-renamed-color-override': '#60a5fa',
-  '--trees-git-untracked-color-override': '#4ade80',
-  '--trees-git-ignored-color-override': '#737373',
+  '--trees-bg-muted-override': 'var(--sidebar-accent)',
+  '--trees-fg-override': 'var(--sidebar-foreground)',
+  '--trees-fg-muted-override': 'var(--muted-foreground)',
+  '--trees-border-color-override': 'var(--sidebar-border)',
+  '--trees-accent-override': 'var(--sidebar-primary)',
+  '--trees-selected-bg-override': 'var(--sidebar-accent)',
+  '--trees-selected-fg-override': 'var(--sidebar-accent-foreground)',
+  '--trees-indent-guide-bg-override': 'var(--sidebar-border)',
+  // Git status keeps universally meaningful colors regardless of the palette.
+  '--trees-git-added-color-override': '#10b981',
+  '--trees-git-modified-color-override': '#f59e0b',
+  '--trees-git-deleted-color-override': '#ef4444',
+  '--trees-git-renamed-color-override': '#3b82f6',
+  '--trees-git-untracked-color-override': '#10b981',
+  '--trees-git-ignored-color-override': 'var(--muted-foreground)',
 } as unknown as CSSProperties;
 
 function ChangedFilesTree({ title, files }: { title: string; files: FileChange[] }) {
@@ -50,7 +49,7 @@ function ChangedFilesTree({ title, files }: { title: string; files: FileChange[]
       counts: new Map(
         files.map((file) => [
           file.path,
-          `+${file.additions} −${file.deletions}`,
+          file.binary ? 'bin' : `+${file.additions} −${file.deletions}`,
         ]),
       ),
     }),
@@ -90,7 +89,7 @@ function ChangedFilesTree({ title, files }: { title: string; files: FileChange[]
       model={model}
       className="min-h-0 flex-1 text-sm"
       header={
-        <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {title} ({files.length})
         </div>
       }
@@ -112,7 +111,7 @@ export function Sidebar() {
 
   return (
     <div
-      className="flex h-full w-72 shrink-0 flex-col overflow-hidden border-r border-neutral-800 bg-neutral-950 py-2"
+      className="flex h-full w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar py-2 text-sidebar-foreground"
       style={TREE_STYLE}
     >
       {model ? (
@@ -131,10 +130,10 @@ export function Sidebar() {
               files={model.reviewed}
             />
           ) : null}
-          {empty ? <div className="px-3 py-4 text-sm text-neutral-500">No changes</div> : null}
+          {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}
         </>
       ) : (
-        <div className="px-3 py-4 text-sm text-neutral-500">Loading…</div>
+        <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>
       )}
     </div>
   );

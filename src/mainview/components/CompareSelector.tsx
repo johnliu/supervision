@@ -3,8 +3,8 @@
 
 import { useState } from 'react';
 import { useReviewStore } from '../store';
-
-const FIELD = 'rounded border border-neutral-700 bg-neutral-800 px-1.5 py-0.5 text-neutral-200 outline-none';
+import { Input } from './ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export function CompareSelector() {
   const compare = useReviewStore((state) => state.compare);
@@ -14,12 +14,10 @@ export function CompareSelector() {
   const [head, setHead] = useState('HEAD');
 
   return (
-    <div className="flex items-center gap-1 text-xs">
-      <select
-        className={FIELD}
+    <div className="flex items-center gap-1.5">
+      <Select
         value={compare.kind}
-        onChange={(event) => {
-          const kind = event.target.value;
+        onValueChange={(kind) => {
           if (kind === 'working') {
             void setCompare({
               kind: 'working',
@@ -29,7 +27,7 @@ export function CompareSelector() {
               kind: 'commit',
               ref,
             });
-          } else {
+          } else if (kind === 'range') {
             void setCompare({
               kind: 'range',
               base,
@@ -38,14 +36,22 @@ export function CompareSelector() {
           }
         }}
       >
-        <option value="working">Working tree</option>
-        <option value="commit">Commit</option>
-        <option value="range">Range</option>
-      </select>
+        <SelectTrigger
+          size="sm"
+          className="w-[140px]"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="working">Working tree</SelectItem>
+          <SelectItem value="commit">Commit</SelectItem>
+          <SelectItem value="range">Range</SelectItem>
+        </SelectContent>
+      </Select>
 
       {compare.kind === 'commit' ? (
-        <input
-          className={`${FIELD} w-28`}
+        <Input
+          className="h-8 w-28"
           value={ref}
           placeholder="ref"
           onChange={(event) => setRef(event.target.value)}
@@ -68,8 +74,8 @@ export function CompareSelector() {
 
       {compare.kind === 'range' ? (
         <>
-          <input
-            className={`${FIELD} w-24`}
+          <Input
+            className="h-8 w-24"
             value={base}
             placeholder="base"
             onChange={(event) => setBase(event.target.value)}
@@ -81,9 +87,9 @@ export function CompareSelector() {
               })
             }
           />
-          <span className="text-neutral-500">..</span>
-          <input
-            className={`${FIELD} w-24`}
+          <span className="text-muted-foreground">..</span>
+          <Input
+            className="h-8 w-24"
             value={head}
             placeholder="head"
             onChange={(event) => setHead(event.target.value)}

@@ -4,6 +4,8 @@
 import { useState } from 'react';
 import { useReviewStore } from '../store';
 import { CompareSelector } from './CompareSelector';
+import { Button } from './ui/button';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 export function Toolbar() {
   const model = useReviewStore((state) => state.model);
@@ -31,56 +33,54 @@ export function Toolbar() {
   };
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-3">
-      <span className="text-sm font-semibold text-neutral-100">Supervision</span>
+    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-sidebar px-3">
+      <span className="font-heading text-sm font-semibold">Supervision</span>
       <CompareSelector />
-      <span className="min-w-0 truncate text-xs text-neutral-500">{model?.repoRoot ?? ''}</span>
+      <span className="min-w-0 truncate text-xs text-muted-foreground">{model?.repoRoot ?? ''}</span>
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="flex overflow-hidden rounded border border-neutral-700 text-xs">
-          <button
-            type="button"
-            className={`px-2 py-1 ${diffStyle === 'split' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-400'}`}
-            onClick={() => setDiffStyle('split')}
-          >
-            Split
-          </button>
-          <button
-            type="button"
-            className={`px-2 py-1 ${diffStyle === 'unified' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-400'}`}
-            onClick={() => setDiffStyle('unified')}
-          >
-            Unified
-          </button>
-        </div>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={diffStyle}
+          onValueChange={(value) => {
+            if (value === 'split' || value === 'unified') {
+              setDiffStyle(value);
+            }
+          }}
+        >
+          <ToggleGroupItem value="split">Split</ToggleGroupItem>
+          <ToggleGroupItem value="unified">Unified</ToggleGroupItem>
+        </ToggleGroup>
 
-        <button
-          type="button"
-          className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+        <Button
+          variant="outline"
+          size="sm"
           disabled={openComments === 0}
           onClick={onExport}
         >
           {exported ? 'Copied!' : `Copy for LLM (${openComments})`}
-        </button>
+        </Button>
 
         {compare.kind === 'working' ? (
-          <button
-            type="button"
-            className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+          <Button
+            variant="outline"
+            size="sm"
             disabled={pendingPaths.length === 0}
             onClick={() => approve(pendingPaths)}
           >
             Approve all
-          </button>
+          </Button>
         ) : null}
 
-        <button
-          type="button"
-          className="rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => refresh()}
         >
           {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        </Button>
       </div>
     </div>
   );

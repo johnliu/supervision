@@ -15,10 +15,12 @@ export default function App() {
   ]);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-neutral-950 text-neutral-100">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <Toolbar />
       {error ? (
-        <div className="border-b border-red-900 bg-red-950 px-3 py-1.5 text-xs text-red-300">{error}</div>
+        <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+          {error}
+        </div>
       ) : null}
       <div className="flex min-h-0 flex-1">
         <Sidebar />
