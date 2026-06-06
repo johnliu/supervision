@@ -12,6 +12,11 @@ export function onWorkingTreeChanged(cb: () => void): void {
 }
 
 const rpc = Electroview.defineRPC<SupervisionRPC>({
+  // Electrobun's default webview request timeout is just 1s
+  // (DEFAULT_MAX_REQUEST_TIME), which getReview can exceed under startup
+  // contention (the first render delays processing the response), surfacing as
+  // "RPC request timed out." Raise it well past that.
+  maxRequestTime: 30_000,
   handlers: {
     messages: {
       workingTreeChanged: () => {

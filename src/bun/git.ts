@@ -1,10 +1,11 @@
-// Git data layer. Runs the git CLI via Bun's shell and shapes the output into
-// the ReviewModel the UI consumes. Each FileChange carries the old/new full
-// file contents (so the diff viewer can expand collapsed context) plus the
-// +/- line counts (derived from the per-file patch).
+// Git data layer. Runs the git CLI and shapes the output into the ReviewModel
+// the UI consumes. Each FileChange carries the old/new full file contents (so the
+// diff viewer can expand collapsed context) plus the +/- line counts (from
+// `git diff --numstat`). Binary files are flagged via numstat's "-/-" marker and
+// have their contents omitted, so a large binary never gets read into memory or
+// shipped over the RPC bridge.
 
 import { join } from 'node:path';
-import { $ } from 'bun';
 import type { CompareSpec, FileChange, FileStatus, ReviewModel } from '../shared/types';
 
 interface GitResult {
@@ -19,13 +20,36 @@ interface NameStatusEntry {
   status: FileStatus;
 }
 
-/** Run a git command in `repo`. Never throws on non-zero exit (we inspect it). */
-async function git(repo: string, args: string[]): Promise<GitResult> {
-  const res = await $`git ${args}`.cwd(repo).quiet().nothrow();
+/**
+ * Run a git command in `repo`. Never throws on non-zero exit (we inspect it).
+ * Exported so the watcher reuses this one hardened spawn path.
+ *
+ * Uses Bun.spawn with explicit stream draining rather than the `$` shell:
+ * `$`…`.quiet()` stops draining the stdout pipe under concurrency, so a command
+ * whose output exceeds the ~64KB OS pipe buffer (e.g. `git show :bun.lock`)
+ * blocks on write and hangs. Draining stdout/stderr as streams avoids that.
+ */
+export async function git(repo: string, args: string[]): Promise<GitResult> {
+  const proc = Bun.spawn(
+    [
+      'git',
+      ...args,
+    ],
+    {
+      cwd: repo,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
   return {
-    stdout: res.stdout.toString(),
-    stderr: res.stderr.toString(),
-    exitCode: res.exitCode,
+    stdout,
+    stderr,
+    exitCode,
   };
 }
 
@@ -100,27 +124,43 @@ function parseNameStatusZ(out: string): NameStatusEntry[] {
   return entries;
 }
 
-function countChanges(patch: string): {
+interface DiffStat {
   additions: number;
   deletions: number;
-} {
-  let additions = 0;
-  let deletions = 0;
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      additions++;
-    } else if (line.startsWith('-') && !line.startsWith('---')) {
-      deletions++;
-    }
+  binary: boolean;
+}
+
+/**
+ * Parse one `git diff --numstat` record: "<adds>\t<dels>\t<path>". Binary files
+ * report "-\t-" — git's locale-independent binary marker (it also honors
+ * .gitattributes), which we use to skip reading their contents.
+ */
+function parseNumstat(out: string): DiffStat {
+  const line = out.split('\n').find((l) => l.trim().length > 0);
+  if (!line) {
+    return {
+      additions: 0,
+      deletions: 0,
+      binary: false,
+    };
+  }
+  const [adds, dels] = line.split('\t');
+  if (adds === '-' || dels === '-') {
+    return {
+      additions: 0,
+      deletions: 0,
+      binary: true,
+    };
   }
   return {
-    additions,
-    deletions,
+    additions: Number.parseInt(adds, 10) || 0,
+    deletions: Number.parseInt(dels, 10) || 0,
+    binary: false,
   };
 }
 
-/** Single-file diff for a tracked change (staged or unstaged). */
-async function trackedPatch(repo: string, staged: boolean, entry: NameStatusEntry): Promise<string> {
+/** +/- counts and binary flag for a tracked change (staged or unstaged). */
+async function trackedStat(repo: string, staged: boolean, entry: NameStatusEntry): Promise<DiffStat> {
   const paths = entry.oldPath
     ? [
         entry.oldPath,
@@ -129,31 +169,32 @@ async function trackedPatch(repo: string, staged: boolean, entry: NameStatusEntr
     : [
         entry.path,
       ];
-  const args = [
+  const res = await git(repo, [
     'diff',
     ...(staged
       ? [
           '--staged',
         ]
       : []),
+    '--numstat',
     '--',
     ...paths,
-  ];
-  const res = await git(repo, args);
-  return res.stdout;
+  ]);
+  return parseNumstat(res.stdout);
 }
 
-/** Synthesize a unified diff for an untracked file via diff --no-index. */
-async function untrackedPatch(repo: string, path: string): Promise<string> {
+/** +/- counts and binary flag for an untracked file (vs an empty base). */
+async function untrackedStat(repo: string, path: string): Promise<DiffStat> {
   // --no-index exits 1 when there is a difference, which is the normal case.
   const res = await git(repo, [
     'diff',
     '--no-index',
+    '--numstat',
     '--',
     '/dev/null',
     path,
   ]);
-  return res.stdout;
+  return parseNumstat(res.stdout);
 }
 
 /**
@@ -182,19 +223,41 @@ async function trackedContents(
 }
 
 async function toFileChange(repo: string, entry: NameStatusEntry, staged: boolean): Promise<FileChange> {
-  const [patch, contents] = await Promise.all([
-    trackedPatch(repo, staged, entry),
-    trackedContents(repo, staged, entry),
-  ]);
+  // Stat first: a binary file's contents are never read (the whole point of the
+  // flag), so we can't parallelize the contents fetch with it.
+  const stat = await trackedStat(repo, staged, entry);
+  const contents = stat.binary
+    ? {
+        oldContents: '',
+        newContents: '',
+      }
+    : await trackedContents(repo, staged, entry);
   return {
     path: entry.path,
     oldPath: entry.oldPath,
     status: entry.status,
     oldContents: contents.oldContents,
     newContents: contents.newContents,
-    ...countChanges(patch),
+    additions: stat.additions,
+    deletions: stat.deletions,
+    binary: stat.binary,
     staged,
     untracked: false,
+  };
+}
+
+async function untrackedChange(repo: string, path: string): Promise<FileChange> {
+  const stat = await untrackedStat(repo, path);
+  return {
+    path,
+    status: 'untracked',
+    oldContents: '',
+    newContents: stat.binary ? '' : await workingFile(repo, path),
+    additions: stat.additions,
+    deletions: stat.deletions,
+    binary: stat.binary,
+    staged: false,
+    untracked: true,
   };
 }
 
@@ -226,23 +289,7 @@ async function getWorkingReview(repoRoot: string): Promise<ReviewModel> {
   const [reviewed, unstaged, untracked] = await Promise.all([
     Promise.all(stagedEntries.map((e) => toFileChange(repoRoot, e, true))),
     Promise.all(unstagedEntries.map((e) => toFileChange(repoRoot, e, false))),
-    Promise.all(
-      untrackedPaths.map(async (p): Promise<FileChange> => {
-        const [patch, newContents] = await Promise.all([
-          untrackedPatch(repoRoot, p),
-          workingFile(repoRoot, p),
-        ]);
-        return {
-          path: p,
-          status: 'untracked',
-          oldContents: '',
-          newContents,
-          ...countChanges(patch),
-          staged: false,
-          untracked: true,
-        };
-      }),
-    ),
+    Promise.all(untrackedPaths.map((p) => untrackedChange(repoRoot, p))),
   ]);
 
   return {
@@ -295,24 +342,33 @@ async function refFileChanges(repoRoot: string, base: string, head: string): Pro
         : [
             entry.path,
           ];
-      const [res, oldContents, newContents] = await Promise.all([
-        git(repoRoot, [
-          'diff',
-          base,
-          head,
-          '--',
-          ...paths,
-        ]),
-        showContents(repoRoot, base, entry.oldPath ?? entry.path),
-        showContents(repoRoot, head, entry.path),
+      const numstat = await git(repoRoot, [
+        'diff',
+        '--numstat',
+        base,
+        head,
+        '--',
+        ...paths,
       ]);
+      const stat = parseNumstat(numstat.stdout);
+      const [oldContents, newContents] = stat.binary
+        ? [
+            '',
+            '',
+          ]
+        : await Promise.all([
+            showContents(repoRoot, base, entry.oldPath ?? entry.path),
+            showContents(repoRoot, head, entry.path),
+          ]);
       return {
         path: entry.path,
         oldPath: entry.oldPath,
         status: entry.status,
         oldContents,
         newContents,
-        ...countChanges(res.stdout),
+        additions: stat.additions,
+        deletions: stat.deletions,
+        binary: stat.binary,
         staged: false,
         untracked: false,
       };

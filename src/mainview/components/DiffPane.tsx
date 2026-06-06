@@ -6,6 +6,8 @@ import { type DiffLineAnnotation, MultiFileDiff, Virtualizer } from '@pierre/dif
 import { useMemo, useState } from 'react';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread, type Draft } from './CommentThread';
+import { Button } from './ui/button';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 type AnnotationMeta =
   | {
@@ -57,7 +59,9 @@ export function DiffPane() {
 
   if (!file) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-neutral-500">Select a file to review</div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Select a file to review
+      </div>
     );
   }
 
@@ -85,34 +89,37 @@ export function DiffPane() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-3 text-xs">
-        <span className="truncate text-neutral-300">{file.path}</span>
-        <span className="shrink-0 font-mono text-neutral-500">
-          <span className="text-green-500">+{file.additions}</span>{' '}
-          <span className="text-red-500">−{file.deletions}</span>
-        </span>
+      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-sidebar px-3 text-xs">
+        <span className="truncate text-foreground">{file.path}</span>
+        {file.binary ? (
+          <span className="shrink-0 font-mono text-muted-foreground">binary</span>
+        ) : (
+          <span className="shrink-0 font-mono text-muted-foreground">
+            <span className="text-emerald-500">+{file.additions}</span>{' '}
+            <span className="text-red-500">−{file.deletions}</span>
+          </span>
+        )}
         {hasBoth ? (
-          <div className="flex shrink-0 overflow-hidden rounded border border-neutral-700">
-            <button
-              type="button"
-              className={`px-2 py-0.5 ${effectiveSide === 'new' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-400'}`}
-              onClick={() => setSide('new')}
-            >
-              New
-            </button>
-            <button
-              type="button"
-              className={`px-2 py-0.5 ${effectiveSide === 'approved' ? 'bg-neutral-700 text-neutral-100' : 'text-neutral-400'}`}
-              onClick={() => setSide('approved')}
-            >
-              Approved
-            </button>
-          </div>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={effectiveSide}
+            onValueChange={(value) => {
+              if (value === 'new' || value === 'approved') {
+                setSide(value);
+              }
+            }}
+          >
+            <ToggleGroupItem value="new">New</ToggleGroupItem>
+            <ToggleGroupItem value="approved">Approved</ToggleGroupItem>
+          </ToggleGroup>
         ) : null}
         {working ? (
-          <button
-            type="button"
-            className="ml-auto shrink-0 rounded border border-neutral-700 px-2 py-0.5 text-neutral-300 hover:bg-neutral-800"
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
             onClick={() =>
               file.staged
                 ? unapprove([
@@ -124,56 +131,62 @@ export function DiffPane() {
             }
           >
             {file.staged ? 'Unapprove' : 'Approve'}
-          </button>
+          </Button>
         ) : null}
       </div>
-      <Virtualizer className="min-h-0 flex-1 overflow-auto bg-neutral-950">
-        <MultiFileDiff<AnnotationMeta>
-          key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
-          oldFile={{
-            name: file.oldPath ?? file.path,
-            contents: file.oldContents,
-          }}
-          newFile={{
-            name: file.path,
-            contents: file.newContents,
-          }}
-          options={{
-            diffStyle,
-            theme: {
-              dark: 'pierre-dark',
-              light: 'pierre-light',
-            },
-            themeType: 'dark',
-            onLineNumberClick: (props) => {
-              setDraft({
-                path: file.path,
-                line: props.lineNumber,
-                side: props.annotationSide,
-              });
-            },
-          }}
-          lineAnnotations={annotations}
-          renderAnnotation={(annotation) => {
-            const meta = annotation.metadata;
-            if (meta.kind === 'draft') {
-              return (
-                <CommentComposer
-                  draft={{
-                    path: file.path,
-                    line: annotation.lineNumber,
-                    side: annotation.side,
-                  }}
-                  onClose={() => setDraft(null)}
-                />
-              );
-            }
-            const comment = fileComments.find((entry) => entry.id === meta.id);
-            return comment ? <CommentThread comment={comment} /> : null;
-          }}
-          disableWorkerPool
-        />
-      </Virtualizer>
+      {file.binary ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
+          Binary file — diff not shown
+        </div>
+      ) : (
+        <Virtualizer className="min-h-0 flex-1 overflow-auto bg-background">
+          <MultiFileDiff<AnnotationMeta>
+            key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
+            oldFile={{
+              name: file.oldPath ?? file.path,
+              contents: file.oldContents,
+            }}
+            newFile={{
+              name: file.path,
+              contents: file.newContents,
+            }}
+            options={{
+              diffStyle,
+              theme: {
+                dark: 'pierre-dark',
+                light: 'pierre-light',
+              },
+              themeType: 'dark',
+              onLineNumberClick: (props) => {
+                setDraft({
+                  path: file.path,
+                  line: props.lineNumber,
+                  side: props.annotationSide,
+                });
+              },
+            }}
+            lineAnnotations={annotations}
+            renderAnnotation={(annotation) => {
+              const meta = annotation.metadata;
+              if (meta.kind === 'draft') {
+                return (
+                  <CommentComposer
+                    draft={{
+                      path: file.path,
+                      line: annotation.lineNumber,
+                      side: annotation.side,
+                    }}
+                    onClose={() => setDraft(null)}
+                  />
+                );
+              }
+              const comment = fileComments.find((entry) => entry.id === meta.id);
+              return comment ? <CommentThread comment={comment} /> : null;
+            }}
+            disableWorkerPool
+          />
+        </Virtualizer>
+      )}
     </div>
   );
 }

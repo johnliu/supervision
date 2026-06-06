@@ -33,9 +33,7 @@ export function createSupervisionRPC() {
             isRepo: root !== null,
           };
         },
-        getReview: async ({ compare }) => {
-          return git.getReview(currentRepo, compare);
-        },
+        getReview: async ({ compare }) => git.getReview(currentRepo, compare),
         stage: async ({ paths }) => {
           await git.stage(currentRepo, paths);
           return git.getReview(currentRepo, {
