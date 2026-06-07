@@ -1,7 +1,9 @@
 import { BrowserWindow, Updater } from 'electrobun/bun';
 import { getRepoRoot } from './git';
+import { setupApplicationMenu } from './menu';
+import { addRecentProject } from './recent';
 import { createSupervisionRPC, getCurrentRepo } from './rpc';
-import { watchWorkingTree } from './watcher';
+import { type WatchHandle, watchWorkingTree } from './watcher';
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -23,9 +25,38 @@ async function getMainViewUrl(): Promise<string> {
   return 'views://mainview/index.html';
 }
 
+// Watch the repo so LLM edits made after launch refresh the review automatically.
+// Held here (not in the watcher) so a project switch can stop the old watcher
+// and start one on the new root.
+let watchHandle: WatchHandle | null = null;
+function rewatch(root: string | null): void {
+  if (watchHandle) {
+    void watchHandle.close();
+    watchHandle = null;
+  }
+  if (root) {
+    watchHandle = watchWorkingTree(root, () => {
+      rpc.send.workingTreeChanged();
+    });
+    console.log(`Watching ${root} for changes`);
+  } else {
+    console.log('No git repo; file watching disabled');
+  }
+}
+
 // Create the main application window with the typed Supervision RPC attached.
 const url = await getMainViewUrl();
-const rpc = createSupervisionRPC();
+const rpc = createSupervisionRPC({
+  onRepoChanged: ({ root, recents }) => {
+    rewatch(root);
+    // Push instead of relying on the RPC return — the native folder dialog can
+    // outlive the request timeout, so the webview learns of the switch here.
+    rpc.send.repoChanged({
+      root,
+      recents,
+    });
+  },
+});
 
 const mainWindow = new BrowserWindow({
   title: 'Supervision',
@@ -41,15 +72,15 @@ const mainWindow = new BrowserWindow({
 
 export { mainWindow, rpc };
 
-// Watch the repo so LLM edits made after launch refresh the review automatically.
-const repoRoot = await getRepoRoot(getCurrentRepo());
-if (repoRoot) {
-  watchWorkingTree(repoRoot, () => {
-    rpc.send.workingTreeChanged();
-  });
-  console.log(`Watching ${repoRoot} for changes`);
-} else {
-  console.log(`No git repo at ${getCurrentRepo()}; file watching disabled`);
+// Native menu bar; menu clicks are routed to the webview over `rpc`.
+setupApplicationMenu(rpc);
+
+const initialRoot = await getRepoRoot(getCurrentRepo());
+rewatch(initialRoot);
+// Seed the launch repo into the recents list so the switcher can return to it
+// after the user opens a different project.
+if (initialRoot) {
+  void addRecentProject(initialRoot);
 }
 
 console.log('Supervision started!');

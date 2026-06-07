@@ -55,8 +55,13 @@ export interface ReviewModel {
 export interface Comment {
   id: string;
   path: string;
+  /** Start line of the comment (the anchor). For a single-line comment this is
+   * the only line. `line`/`side` stay the anchor for backward compatibility. */
   line: number;
   side: AnnotationSide;
+  /** Inclusive end line of a multi-line selection; absent for single-line. */
+  endLine?: number;
+  endSide?: AnnotationSide;
   body: string;
   status: 'open' | 'resolved';
   createdAt: string;
@@ -68,3 +73,26 @@ export interface CommentsFile {
   repo: string;
   comments: Comment[];
 }
+
+/** User preferences persisted to `.supervision/config.json`. */
+export interface SupervisionConfig {
+  diffStyle: 'split' | 'unified';
+  ignoreWhitespace: boolean;
+}
+
+/**
+ * Result of pointing the app at a different repo. On success carries the
+ * resolved git root and the updated recent-projects list; on failure either an
+ * error (not a git repo) or `cancelled` (the user dismissed the file dialog).
+ */
+export type SetRepoResult =
+  | {
+      ok: true;
+      root: string;
+      recents: string[];
+    }
+  | {
+      ok: false;
+      error?: string;
+      cancelled?: boolean;
+    };

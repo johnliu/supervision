@@ -1,14 +1,25 @@
 // Changed-files sidebar built on @pierre/trees: a real file tree per review
-// group (Needs review / Reviewed, or "Changed" in ref mode), colored by git
-// status with +/- counts as a row decoration, themed dark to match the app.
+// group (Unstaged / Staged, or "Changed" in ref mode), colored by git status
+// with +/- counts as a row decoration, themed dark to match the app.
+//
+// The two groups live in a single scroll container as collapsible sections
+// (Staged starts collapsed). @pierre/trees virtualizes against a measured
+// height, so each expanded tree is sized to its exact content height
+// (rowCount × item height) — no inner scrollbar, so the sidebar scrolls as one.
 // useFileTree builds its model once, so each tree is keyed by its path set and
-// remounts when files are added/removed/approved.
+// remounts when files are added/removed/approved, while the section's open
+// state (keyed stably) survives those refreshes.
 
 import { themeToTreeStyles } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { type CSSProperties, useMemo } from 'react';
+import { ChevronRight } from 'lucide-react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
 import type { FileChange } from '../../shared/types';
 import { useReviewStore } from '../store';
+
+// Matches @pierre/trees' default density itemHeight (model/density.ts).
+const ITEM_HEIGHT = 30;
 
 // A dark base derived from a theme object, plus explicit `--trees-*-override`
 // colors (highest precedence). Custom properties inherit across the shadow
@@ -35,7 +46,23 @@ const TREE_STYLE = {
   '--trees-git-ignored-color-override': 'var(--muted-foreground)',
 } as unknown as CSSProperties;
 
-function ChangedFilesTree({ title, files }: { title: string; files: FileChange[] }) {
+// Rows a fully-expanded tree renders: every file plus each distinct ancestor
+// directory (matches flattenEmptyDirectories: false + initialExpansion: 'open').
+function treeRowCount(files: FileChange[]): number {
+  const dirs = new Set<string>();
+  for (const file of files) {
+    const segments = file.path.split('/');
+    segments.pop();
+    let prefix = '';
+    for (const segment of segments) {
+      prefix = prefix ? `${prefix}/${segment}` : segment;
+      dirs.add(prefix);
+    }
+  }
+  return dirs.size + files.length;
+}
+
+function ChangedFilesTree({ files }: { files: FileChange[] }) {
   const select = useReviewStore((state) => state.select);
   const selectedPath = useReviewStore((state) => state.selectedPath);
 
@@ -82,17 +109,47 @@ function ChangedFilesTree({ title, files }: { title: string; files: FileChange[]
         : null,
   });
 
-  // flex-1 + min-h-0 gives the tree a real measured height (required by
-  // @pierre/trees; initialVisibleRowCount is only a first-render hint).
+  // Reflect store-driven selection changes (keyboard nav, approve→advance) in
+  // the tree, which otherwise only updates from its own clicks.
+  useEffect(() => {
+    const selected = model.getSelectedPaths();
+    if (selectedPath && paths.includes(selectedPath)) {
+      // Enforce single-select: drop stale selections first. model.select()
+      // ADDS to the selection, so without this the tree ends up multi-selected
+      // and its onSelectionChange reports the old path as selected[0], reverting
+      // the store (the "bouncing" file-nav bug).
+      for (const path of selected) {
+        if (path !== selectedPath) {
+          model.getItem(path)?.deselect();
+        }
+      }
+      if (!selected.includes(selectedPath)) {
+        model.getItem(selectedPath)?.select();
+      }
+      model.scrollToPath(selectedPath, {
+        offset: 'nearest',
+      });
+    } else {
+      // Selection lives in another section (or nowhere); clear this tree.
+      for (const path of selected) {
+        model.getItem(path)?.deselect();
+      }
+    }
+  }, [
+    selectedPath,
+    paths,
+    model,
+  ]);
+
+  // Size to exact content height so the tree never scrolls internally; the
+  // sidebar container owns the single scrollbar.
   return (
     <FileTree
       model={model}
-      className="min-h-0 flex-1 text-sm"
-      header={
-        <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {title} ({files.length})
-        </div>
-      }
+      className="text-sm"
+      style={{
+        height: treeRowCount(files) * ITEM_HEIGHT,
+      }}
     />
   );
 }
@@ -104,6 +161,33 @@ function signature(files: FileChange[]): string {
     .join('\n');
 }
 
+// One collapsible group. The section (and its open state) is keyed stably by
+// the caller; the inner tree is keyed by its path set so it remounts on refresh
+// without collapsing the section.
+function Section({ title, files, defaultOpen }: { title: string; files: FileChange[]; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-1 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
+        <span>{title}</span>
+        <span className="font-normal text-muted-foreground/60">{files.length}</span>
+      </button>
+      {open ? (
+        <ChangedFilesTree
+          key={signature(files)}
+          files={files}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const model = useReviewStore((state) => state.model);
   const working = useReviewStore((state) => state.compare.kind === 'working');
@@ -111,23 +195,25 @@ export function Sidebar() {
 
   return (
     <div
-      className="flex h-full w-72 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar py-2 text-sidebar-foreground"
+      className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar py-2 text-sidebar-foreground"
       style={TREE_STYLE}
     >
       {model ? (
         <>
           {model.unreviewed.length > 0 ? (
-            <ChangedFilesTree
-              key={`unreviewed:${signature(model.unreviewed)}`}
-              title={working ? 'Needs review' : 'Changed'}
+            <Section
+              key="unreviewed"
+              title={working ? 'Unstaged' : 'Changed'}
               files={model.unreviewed}
+              defaultOpen
             />
           ) : null}
           {working && model.reviewed.length > 0 ? (
-            <ChangedFilesTree
-              key={`reviewed:${signature(model.reviewed)}`}
-              title="Reviewed"
+            <Section
+              key="reviewed"
+              title="Staged"
               files={model.reviewed}
+              defaultOpen={false}
             />
           ) : null}
           {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}

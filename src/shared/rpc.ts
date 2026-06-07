@@ -9,7 +9,7 @@
 // So `workingTreeChanged` lives under `webview.messages`: Bun pushes it via
 // `rpc.send.workingTreeChanged()` and the webview handles it.
 
-import type { AnnotationSide, Comment, CompareSpec, ReviewModel } from './types';
+import type { AnnotationSide, Comment, CompareSpec, ReviewModel, SetRepoResult, SupervisionConfig } from './types';
 
 export type SupervisionRPC = {
   bun: {
@@ -48,6 +48,8 @@ export type SupervisionRPC = {
           path: string;
           line: number;
           side: AnnotationSide;
+          endLine?: number;
+          endSide?: AnnotationSide;
           body: string;
         };
         response: Comment[];
@@ -71,6 +73,31 @@ export type SupervisionRPC = {
           path: string;
         };
       };
+      getConfig: {
+        params: undefined;
+        response: SupervisionConfig;
+      };
+      saveConfig: {
+        params: SupervisionConfig;
+        response: SupervisionConfig;
+      };
+      /** Point the app at `path`'s git root (recent click / programmatic). */
+      setRepo: {
+        params: {
+          path: string;
+        };
+        response: SetRepoResult;
+      };
+      /** Open a native folder picker, then switch to the chosen repo. */
+      openProject: {
+        params: undefined;
+        response: SetRepoResult;
+      };
+      /** Most-recently-opened repo roots, newest first. */
+      getRecentProjects: {
+        params: undefined;
+        response: string[];
+      };
     };
     messages: Record<never, never>;
   };
@@ -78,6 +105,17 @@ export type SupervisionRPC = {
     requests: Record<never, never>;
     messages: {
       workingTreeChanged: undefined;
+      /** A native menu item was clicked; `action` is the item's action id. */
+      menuAction: {
+        action: string;
+      };
+      /** The repo under review changed (recent click / Open Project…). Pushed
+       * instead of relying on the RPC return, since the native folder dialog can
+       * outlive the request timeout. */
+      repoChanged: {
+        root: string;
+        recents: string[];
+      };
     };
   };
 };

@@ -11,6 +11,8 @@ export interface NewComment {
   path: string;
   line: number;
   side: AnnotationSide;
+  endLine?: number;
+  endSide?: AnnotationSide;
   body: string;
 }
 
@@ -49,11 +51,19 @@ async function writeComments(repoRoot: string, comments: Comment[]): Promise<voi
 
 export async function addComment(repoRoot: string, input: NewComment): Promise<Comment[]> {
   const comments = await readComments(repoRoot);
+  const isRange = input.endLine !== undefined && input.endLine !== input.line;
   comments.push({
     id: crypto.randomUUID(),
     path: input.path,
     line: input.line,
     side: input.side,
+    // Only persist range fields for genuine multi-line selections.
+    ...(isRange
+      ? {
+          endLine: input.endLine,
+          endSide: input.endSide ?? input.side,
+        }
+      : {}),
     body: input.body,
     status: 'open',
     createdAt: new Date().toISOString(),
@@ -97,7 +107,11 @@ function renderMarkdown(repoRoot: string, comments: Comment[]): string {
   for (const [file, list] of byFile) {
     lines.push(`## ${file}`, '');
     for (const comment of list.sort((a, b) => a.line - b.line)) {
-      lines.push(`- **${file}:${comment.line}** (${comment.side}): ${comment.body}`);
+      const loc =
+        comment.endLine && comment.endLine !== comment.line
+          ? `${file}:${comment.line}-${comment.endLine}`
+          : `${file}:${comment.line}`;
+      lines.push(`- **${loc}** (${comment.side}): ${comment.body}`);
     }
     lines.push('');
   }

@@ -1,11 +1,26 @@
-// Top toolbar: shows the repo, toggles unified/split, refreshes, approves all
-// pending files, and exports open comments for the LLM (clipboard + file).
+// Top toolbar: repo + compare selector on the left; icon actions on the right
+// (split/unified, ignore-whitespace, copy-for-LLM, approve-all, refresh), each
+// with a tooltip explaining what it does.
 
-import { useState } from 'react';
+import { AlignJustify, CheckCheck, ClipboardCopy, Columns2, Pilcrow, RefreshCw, Settings } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 import { useReviewStore } from '../store';
 import { CompareSelector } from './CompareSelector';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import { Button } from './ui/button';
+import { Toggle } from './ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+
+/** Wraps a control in a tooltip; the control becomes the tooltip trigger. */
+function Hint({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function Toolbar() {
   const model = useReviewStore((state) => state.model);
@@ -13,9 +28,12 @@ export function Toolbar() {
   const compare = useReviewStore((state) => state.compare);
   const diffStyle = useReviewStore((state) => state.diffStyle);
   const setDiffStyle = useReviewStore((state) => state.setDiffStyle);
+  const ignoreWhitespace = useReviewStore((state) => state.ignoreWhitespace);
+  const setIgnoreWhitespace = useReviewStore((state) => state.setIgnoreWhitespace);
   const refresh = useReviewStore((state) => state.refresh);
   const approve = useReviewStore((state) => state.approve);
   const exportReview = useReviewStore((state) => state.exportReview);
+  const setSettings = useReviewStore((state) => state.setSettings);
   const loading = useReviewStore((state) => state.loading);
   const [exported, setExported] = useState(false);
 
@@ -36,7 +54,7 @@ export function Toolbar() {
     <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-sidebar px-3">
       <span className="font-heading text-sm font-semibold">Supervision</span>
       <CompareSelector />
-      <span className="min-w-0 truncate text-xs text-muted-foreground">{model?.repoRoot ?? ''}</span>
+      <ProjectSwitcher />
 
       <div className="ml-auto flex items-center gap-2">
         <ToggleGroup
@@ -50,37 +68,87 @@ export function Toolbar() {
             }
           }}
         >
-          <ToggleGroupItem value="split">Split</ToggleGroupItem>
-          <ToggleGroupItem value="unified">Unified</ToggleGroupItem>
+          <Hint label="Split view">
+            <ToggleGroupItem
+              value="split"
+              aria-label="Split view"
+            >
+              <Columns2 />
+            </ToggleGroupItem>
+          </Hint>
+          <Hint label="Unified view">
+            <ToggleGroupItem
+              value="unified"
+              aria-label="Unified view"
+            >
+              <AlignJustify />
+            </ToggleGroupItem>
+          </Hint>
         </ToggleGroup>
 
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={openComments === 0}
-          onClick={onExport}
-        >
-          {exported ? 'Copied!' : `Copy for LLM (${openComments})`}
-        </Button>
-
-        {compare.kind === 'working' ? (
-          <Button
+        <Hint label={ignoreWhitespace ? 'Ignoring whitespace changes' : 'Showing whitespace changes'}>
+          <Toggle
             variant="outline"
             size="sm"
-            disabled={pendingPaths.length === 0}
-            onClick={() => approve(pendingPaths)}
+            aria-label="Ignore whitespace"
+            pressed={ignoreWhitespace}
+            onPressedChange={setIgnoreWhitespace}
           >
-            Approve all
+            <Pilcrow />
+          </Toggle>
+        </Hint>
+
+        <Hint
+          label={exported ? 'Copied!' : `Copy ${openComments} open comment${openComments === 1 ? '' : 's'} for LLM`}
+        >
+          <Button
+            variant="outline"
+            size="icon-sm"
+            className="relative"
+            disabled={openComments === 0}
+            onClick={onExport}
+          >
+            <ClipboardCopy />
+            {openComments > 0 ? (
+              <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5rem] font-semibold text-primary-foreground">
+                {openComments}
+              </span>
+            ) : null}
           </Button>
+        </Hint>
+
+        {compare.kind === 'working' ? (
+          <Hint label={`Approve all ${pendingPaths.length} unstaged file${pendingPaths.length === 1 ? '' : 's'}`}>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={pendingPaths.length === 0}
+              onClick={() => approve(pendingPaths)}
+            >
+              <CheckCheck />
+            </Button>
+          </Hint>
         ) : null}
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refresh()}
-        >
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </Button>
+        <Hint label="Refresh">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            onClick={() => refresh()}
+          >
+            <RefreshCw className={loading ? 'animate-spin' : undefined} />
+          </Button>
+        </Hint>
+
+        <Hint label="Settings">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            onClick={() => setSettings(true)}
+          >
+            <Settings />
+          </Button>
+        </Hint>
       </div>
     </div>
   );

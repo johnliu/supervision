@@ -3,15 +3,14 @@
 // editor opened when a line number is clicked.
 
 import { useState } from 'react';
-import type { AnnotationSide, Comment } from '../../shared/types';
-import { useReviewStore } from '../store';
+import type { Comment } from '../../shared/types';
+import { type Draft, useReviewStore } from '../store';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 
-export interface Draft {
-  path: string;
-  line: number;
-  side: AnnotationSide;
+/** "line N" or "lines N–M" for a (possibly single-line) range. */
+function lineLabel(line: number, endLine?: number): string {
+  return endLine && endLine !== line ? `lines ${line}–${endLine}` : `line ${line}`;
 }
 
 export function CommentThread({ comment }: { comment: Comment }) {
@@ -23,7 +22,7 @@ export function CommentThread({ comment }: { comment: Comment }) {
     <div className="my-1 rounded-md border border-border bg-card p-2 text-sm text-card-foreground shadow-sm">
       <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
         <span className={resolved ? 'text-emerald-500' : 'text-amber-500'}>{resolved ? 'Resolved' : 'Comment'}</span>
-        <span>· line {comment.line}</span>
+        <span>· {lineLabel(comment.line, comment.endLine)}</span>
         <div className="ml-auto flex gap-1">
           {resolved ? null : (
             <Button
@@ -62,6 +61,8 @@ export function CommentComposer({ draft, onClose }: { draft: Draft; onClose: () 
       path: draft.path,
       line: draft.line,
       side: draft.side,
+      endLine: draft.endLine,
+      endSide: draft.endSide,
       body: trimmed,
     });
     setBody('');
@@ -74,7 +75,7 @@ export function CommentComposer({ draft, onClose }: { draft: Draft; onClose: () 
         autoFocus
         value={body}
         onChange={(event) => setBody(event.target.value)}
-        placeholder={`Comment on line ${draft.line} (⌘/Ctrl+Enter to save)`}
+        placeholder={`Comment on ${lineLabel(draft.line, draft.endLine)} (⌘/Ctrl+Enter to save)`}
         className="h-16 resize-none text-sm"
         onKeyDown={(event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {

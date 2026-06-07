@@ -5,10 +5,22 @@ import { Electroview } from 'electrobun/view';
 import type { SupervisionRPC } from '../shared/rpc';
 
 let workingTreeChangedHandler: (() => void) | null = null;
+let menuActionHandler: ((action: string) => void) | null = null;
+let repoChangedHandler: ((info: { root: string; recents: string[] }) => void) | null = null;
 
 /** Register a callback fired when Bun reports the working tree changed. */
 export function onWorkingTreeChanged(cb: () => void): void {
   workingTreeChangedHandler = cb;
+}
+
+/** Register a callback fired when a native menu item is clicked. */
+export function onMenuAction(cb: (action: string) => void): void {
+  menuActionHandler = cb;
+}
+
+/** Register a callback fired when Bun switches the repo under review. */
+export function onRepoChanged(cb: (info: { root: string; recents: string[] }) => void): void {
+  repoChangedHandler = cb;
 }
 
 const rpc = Electroview.defineRPC<SupervisionRPC>({
@@ -21,6 +33,12 @@ const rpc = Electroview.defineRPC<SupervisionRPC>({
     messages: {
       workingTreeChanged: () => {
         workingTreeChangedHandler?.();
+      },
+      menuAction: ({ action }) => {
+        menuActionHandler?.(action);
+      },
+      repoChanged: (info) => {
+        repoChangedHandler?.(info);
       },
     },
   },

@@ -27,6 +27,8 @@ comments, applies the requested changes, and marks them resolved.
       "path": "src/foo.ts",
       "line": 42,
       "side": "additions",
+      "endLine": 45,
+      "endSide": "additions",
       "body": "extract this into a helper",
       "status": "open",
       "createdAt": "2026-06-05T09:00:00.000Z"
@@ -39,6 +41,9 @@ comments, applies the requested changes, and marks them resolved.
   `side` (`additions` = the new/right side of the diff, `deletions` = the
   old/left side). For most "change this" comments, treat `additions` line
   numbers as the current file's line numbers.
+- `endLine`/`endSide` are optional. When `endLine` is present the comment spans
+  `line`..`endLine` (inclusive); treat the whole range as the target. When they
+  are absent the comment is anchored to the single `line`.
 - Only act on comments with `"status": "open"`. Ignore `"resolved"` ones.
 
 ## Steps
