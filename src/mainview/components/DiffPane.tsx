@@ -58,14 +58,32 @@ function firstRenderedLine(root: HTMLElement): number | null {
   return null;
 }
 
+// Scroll the diff's vertical scroller to reveal `el`, WITHOUT touching the
+// horizontal scroll position — so indentation/tabs the user scrolled to stay
+// put. The margin keeps a little context past the edge, which also keeps the
+// virtualizer rendering ahead so up/down navigation doesn't stick at the window
+// edge (e.g. when scrolling up from the bottom of a long file).
+function scrollRowIntoView(root: HTMLElement, el: HTMLElement): void {
+  const scroller = root.querySelector<HTMLElement>('.overflow-auto');
+  if (!scroller) {
+    return;
+  }
+  const elRect = el.getBoundingClientRect();
+  const viewRect = scroller.getBoundingClientRect();
+  const margin = 40;
+  if (elRect.top < viewRect.top + margin) {
+    scroller.scrollTop -= viewRect.top + margin - elRect.top;
+  } else if (elRect.bottom > viewRect.bottom - margin) {
+    scroller.scrollTop += elRect.bottom - viewRect.bottom + margin;
+  }
+}
+
 // Scroll a cursor line into view; if it isn't rendered (collapsed/virtualized),
 // nudge the viewport in the move direction so it scrolls toward it.
 function scrollLineIntoView(root: HTMLElement, line: number, direction: number): void {
   const cell = findLineCell(root, line);
   if (cell) {
-    cell.scrollIntoView({
-      block: 'nearest',
-    });
+    scrollRowIntoView(root, cell);
   } else {
     root.querySelector<HTMLElement>('.overflow-auto')?.scrollBy({
       top: direction * 90,
@@ -435,6 +453,16 @@ export function DiffPane() {
       } else if (sepCursorRef.current != null) {
         current = rows.findIndex((row) => row.sep === sepCursorRef.current);
       }
+      // If the cursor row has been scrolled out of view (e.g. the user
+      // wheel-scrolled away), resume from the viewport rather than snapping back
+      // to the off-screen cursor.
+      if (current !== -1) {
+        const rect = rows[current].el.getBoundingClientRect();
+        const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
+        if (view && (rect.bottom <= view.top || rect.top >= view.bottom)) {
+          current = -1;
+        }
+      }
       if (current === -1) {
         // Cursor not on a rendered row (e.g. clicked elsewhere): resume from the
         // first row visible in the viewport — never the top of the file.
@@ -472,9 +500,7 @@ export function DiffPane() {
           });
         }
       }
-      next.el.scrollIntoView({
-        block: 'nearest',
-      });
+      scrollRowIntoView(root, next.el);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -494,25 +520,29 @@ export function DiffPane() {
     selectedLines,
   ]);
 
-  // Keep the cursor row in view after the selection changes. The diff lib
-  // mis-scrolls (jumps toward the top) when a deletions-side selection is
+  // Keep the cursor row vertically in view after the selection changes. The diff
+  // lib mis-scrolls (jumps toward the top) when a deletions-side selection is
   // applied in split view; re-centering on the real cursor row — after the lib's
   // own scroll, since parent layout effects run after the child's — corrects it.
-  // block:'nearest' is a no-op when the row is already visible, so clicks and
-  // drag-select aren't disturbed.
+  // Vertical-only (horizontal stays put) and a no-op when the row is already in
+  // view, so clicks and drag-select aren't disturbed.
   useLayoutEffect(() => {
     if (!selectedLines) {
       return;
     }
     const root = containerRef.current;
-    const shadow = root ? diffShadowRoot(root) : null;
+    if (!root) {
+      return;
+    }
+    const shadow = diffShadowRoot(root);
     if (!shadow) {
       return;
     }
     const endSide = selectedLines.endSide ?? selectedLines.side ?? 'additions';
-    findCursorCell(shadow, selectedLines.end, endSide)?.scrollIntoView({
-      block: 'nearest',
-    });
+    const cell = findCursorCell(shadow, selectedLines.end, endSide);
+    if (cell) {
+      scrollRowIntoView(root, cell);
+    }
   }, [
     selectedLines,
   ]);
