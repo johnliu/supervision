@@ -85,11 +85,74 @@ function diffShadowRoot(root: HTMLElement): ShadowRoot | null {
   return null;
 }
 
-// Navigable cursor stops top-to-bottom: code lines plus collapsed-context bars,
-// scoped to the additions column (split) or the whole diff (unified).
-function navStops(shadow: ShadowRoot): HTMLElement[] {
-  const scope = shadow.querySelector('[data-additions]') ?? shadow;
-  return Array.from(scope.querySelectorAll<HTMLElement>('[data-column-number], [data-separator]'));
+// One navigable stop: a code line or a collapsed-context bar.
+interface VisualRow {
+  el: HTMLElement;
+  /** Line number to select, or null for a collapsed bar. */
+  line: number | null;
+  /** Side the line lives on — matters for split deletions and unified. */
+  side: AnnotationSide;
+  /** expand-index when this row is a collapsed bar. */
+  sep: string | null;
+}
+
+// Navigable stops in true on-screen order: every rendered code line plus the
+// collapsed bars, ordered by their vertical position so j/k step exactly what
+// the eye sees. Split renders two columns (additions / deletions) and unified
+// one; keying by rounded top collapses a split row's two cells into one stop
+// (preferring the additions side for context / modified rows), and reading the
+// side per cell makes deletion rows select correctly in both layouts.
+function visualRows(shadow: ShadowRoot): VisualRow[] {
+  const byTop = new Map<
+    number,
+    {
+      top: number;
+      row: VisualRow;
+    }
+  >();
+
+  for (const el of shadow.querySelectorAll<HTMLElement>('[data-line]')) {
+    const lineAttr = el.getAttribute('data-line');
+    const type = el.getAttribute('data-line-type') ?? '';
+    if (lineAttr == null || !(type.startsWith('change') || type.startsWith('context'))) {
+      continue;
+    }
+    const top = Math.round(el.getBoundingClientRect().top);
+    const side: AnnotationSide =
+      type === 'change-deletion' || el.closest('[data-deletions]') ? 'deletions' : 'additions';
+    const existing = byTop.get(top);
+    // Prefer the additions side when a visual row has cells on both.
+    if (!existing || (existing.row.side === 'deletions' && side === 'additions')) {
+      byTop.set(top, {
+        top,
+        row: {
+          el,
+          line: Number(lineAttr),
+          side,
+          sep: null,
+        },
+      });
+    }
+  }
+
+  for (const el of shadow.querySelectorAll<HTMLElement>('[data-separator][data-expand-index]')) {
+    const top = Math.round(el.getBoundingClientRect().top);
+    if (!byTop.has(top)) {
+      byTop.set(top, {
+        top,
+        row: {
+          el,
+          line: null,
+          side: 'additions',
+          sep: el.getAttribute('data-expand-index'),
+        },
+      });
+    }
+  }
+
+  return Array.from(byTop.values())
+    .sort((a, b) => a.top - b.top)
+    .map((entry) => entry.row);
 }
 
 // Whether a line cell belongs to a change (addition/deletion) vs context. The
@@ -106,7 +169,7 @@ function isChangeCell(cell: HTMLElement): boolean {
 
 // New-side line numbers that begin each change block ("hunk"), top-to-bottom.
 // A block is a contiguous run of change lines; a context line or a collapsed
-// separator ends it. Used by ]c / [c to jump between changes. DOM-based, so it
+// separator ends it. Used by ] / [ to jump between changes. DOM-based, so it
 // covers the rendered hunks (changed lines are always rendered; only unchanged
 // context collapses).
 function changeBlockStarts(shadow: ShadowRoot): number[] {
@@ -301,15 +364,17 @@ export function DiffPane() {
           start,
           side,
           end,
-          endSide: 'additions',
+          endSide: side,
         });
         scrollLineIntoView(root, end, direction);
         return;
       }
 
-      // Plain j/k: step through stops (lines + collapsed bars) in view order.
-      const stops = shadow ? navStops(shadow) : [];
-      if (stops.length === 0) {
+      // Plain j/k: step through visual rows (code lines + collapsed bars) in
+      // on-screen order, selecting each on its own side so the cursor tracks
+      // what's visible — no jumping over deletion rows, and correct in unified.
+      const rows = shadow ? visualRows(shadow) : [];
+      if (rows.length === 0) {
         const line = Math.max(1, Math.min(maxLine, (selection?.end ?? firstRenderedLine(root) ?? 1) + direction));
         store.setSelectedLines({
           start: line,
@@ -320,54 +385,47 @@ export function DiffPane() {
         scrollLineIntoView(root, line, direction);
         return;
       }
-      const isLine = (el: HTMLElement) => el.hasAttribute('data-column-number');
+      // Locate the current cursor among the rows (by line + side, then sep).
       let current = -1;
       if (selection) {
-        current = stops.findIndex(
-          (el) => isLine(el) && el.getAttribute('data-column-number') === String(selection.end),
-        );
+        const side = selection.endSide ?? selection.side ?? 'additions';
+        current = rows.findIndex((row) => row.line === selection.end && row.side === side);
+        if (current === -1) {
+          current = rows.findIndex((row) => row.line === selection.end);
+        }
       } else if (sepCursorRef.current != null) {
-        current = stops.findIndex(
-          (el) => !isLine(el) && (el.getAttribute('data-expand-index') ?? '') === sepCursorRef.current,
-        );
+        current = rows.findIndex((row) => row.sep === sepCursorRef.current);
       }
       if (current === -1) {
-        // No live cursor (e.g. just expanded a bar): resume from the top of view.
-        const line = firstRenderedLine(root);
-        if (line != null) {
-          current = stops.findIndex((el) => isLine(el) && el.getAttribute('data-column-number') === String(line));
-        }
+        // No live cursor: resume from the first row visible in the viewport, so
+        // the first press lands on what the user is looking at.
+        const viewportTop = root.querySelector('.overflow-auto')?.getBoundingClientRect().top ?? 0;
+        const firstVisible = rows.findIndex((row) => Math.round(row.el.getBoundingClientRect().top) >= viewportTop - 1);
+        const desired = firstVisible === -1 ? (direction > 0 ? 0 : rows.length - 1) : firstVisible;
+        current = desired - direction; // so current + direction lands on `desired`
       }
-      const nextIndex =
-        current === -1
-          ? direction > 0
-            ? 0
-            : stops.length - 1
-          : Math.min(stops.length - 1, Math.max(0, current + direction));
-      const el = stops[nextIndex];
+      const next = rows[Math.min(rows.length - 1, Math.max(0, current + direction))];
       if (shadow) {
         clearSeparatorCursor(shadow);
       }
-      if (isLine(el)) {
-        const line = Number(el.getAttribute('data-column-number'));
+      if (next.sep != null && shadow) {
+        sepCursorRef.current = next.sep;
+        highlightSeparator(shadow, next.sep);
+        store.setSelectedLines(null);
+      } else if (next.line != null) {
         sepCursorRef.current = null;
         anchorRef.current = {
-          line,
-          side: 'additions',
+          line: next.line,
+          side: next.side,
         };
         store.setSelectedLines({
-          start: line,
-          end: line,
-          side: 'additions',
-          endSide: 'additions',
+          start: next.line,
+          end: next.line,
+          side: next.side,
+          endSide: next.side,
         });
-      } else if (shadow) {
-        const index = el.getAttribute('data-expand-index') ?? '';
-        sepCursorRef.current = index;
-        highlightSeparator(shadow, index);
-        store.setSelectedLines(null);
       }
-      el.scrollIntoView({
+      next.el.scrollIntoView({
         block: 'nearest',
       });
     };
