@@ -5,7 +5,7 @@
 // composer. Existing comments render inline as annotations at their end line.
 
 import { type DiffLineAnnotation, MultiFileDiff, Virtualizer } from '@pierre/diffs/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AnnotationSide, FileChange } from '../../shared/types';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
@@ -85,31 +85,56 @@ function diffShadowRoot(root: HTMLElement): ShadowRoot | null {
   return null;
 }
 
-// One navigable stop: a code line or a collapsed-context bar.
+// One navigable stop: a code line or a collapsed-context bar. A visual row is
+// identified by BOTH its new-side (addLine) and old-side (delLine) file lines —
+// a context/modified row has both — so the keyboard cursor can be re-located no
+// matter which side a selection or click came from. (Identifying a row by a
+// single file line number is ambiguous: new-file line N and old-file line N are
+// different rows, which made the cursor jump to the top of the file.)
 interface VisualRow {
+  /** Element to scroll into view (the additions cell when present). */
   el: HTMLElement;
-  /** Line number to select, or null for a collapsed bar. */
-  line: number | null;
-  /** Side the line lives on — matters for split deletions and unified. */
-  side: AnnotationSide;
-  /** expand-index when this row is a collapsed bar. */
+  /** New-file line number, if this row has an additions/context cell. */
+  addLine: number | null;
+  /** Old-file line number, if this row has a deletions/context cell. */
+  delLine: number | null;
+  /** expand-index when this row is a collapsed bar (then add/delLine are null). */
+  sep: string | null;
+}
+
+interface RowAcc {
+  top: number;
+  addEl: HTMLElement | null;
+  delEl: HTMLElement | null;
+  addLine: number | null;
+  delLine: number | null;
+  sepEl: HTMLElement | null;
   sep: string | null;
 }
 
 // Navigable stops in true on-screen order: every rendered code line plus the
-// collapsed bars, ordered by their vertical position so j/k step exactly what
-// the eye sees. Split renders two columns (additions / deletions) and unified
-// one; keying by rounded top collapses a split row's two cells into one stop
-// (preferring the additions side for context / modified rows), and reading the
-// side per cell makes deletion rows select correctly in both layouts.
+// collapsed bars, ordered by vertical position so j/k step exactly what the eye
+// sees. Split renders two columns (additions / deletions) and unified one;
+// keying by rounded top collapses a split row's two cells into one stop while
+// recording both file-line numbers.
 function visualRows(shadow: ShadowRoot): VisualRow[] {
-  const byTop = new Map<
-    number,
-    {
-      top: number;
-      row: VisualRow;
+  const byTop = new Map<number, RowAcc>();
+  const at = (top: number): RowAcc => {
+    let acc = byTop.get(top);
+    if (!acc) {
+      acc = {
+        top,
+        addEl: null,
+        delEl: null,
+        addLine: null,
+        delLine: null,
+        sepEl: null,
+        sep: null,
+      };
+      byTop.set(top, acc);
     }
-  >();
+    return acc;
+  };
 
   for (const el of shadow.querySelectorAll<HTMLElement>('[data-line]')) {
     const lineAttr = el.getAttribute('data-line');
@@ -117,42 +142,56 @@ function visualRows(shadow: ShadowRoot): VisualRow[] {
     if (lineAttr == null || !(type.startsWith('change') || type.startsWith('context'))) {
       continue;
     }
-    const top = Math.round(el.getBoundingClientRect().top);
-    const side: AnnotationSide =
-      type === 'change-deletion' || el.closest('[data-deletions]') ? 'deletions' : 'additions';
-    const existing = byTop.get(top);
-    // Prefer the additions side when a visual row has cells on both.
-    if (!existing || (existing.row.side === 'deletions' && side === 'additions')) {
-      byTop.set(top, {
-        top,
-        row: {
-          el,
-          line: Number(lineAttr),
-          side,
-          sep: null,
-        },
-      });
+    const acc = at(Math.round(el.getBoundingClientRect().top));
+    if (type === 'change-deletion' || el.closest('[data-deletions]')) {
+      acc.delLine ??= Number(lineAttr);
+      acc.delEl ??= el;
+    } else {
+      acc.addLine ??= Number(lineAttr);
+      acc.addEl ??= el;
     }
   }
 
   for (const el of shadow.querySelectorAll<HTMLElement>('[data-separator][data-expand-index]')) {
-    const top = Math.round(el.getBoundingClientRect().top);
-    if (!byTop.has(top)) {
-      byTop.set(top, {
-        top,
-        row: {
-          el,
-          line: null,
-          side: 'additions',
-          sep: el.getAttribute('data-expand-index'),
-        },
-      });
+    const acc = at(Math.round(el.getBoundingClientRect().top));
+    if (acc.addEl == null && acc.delEl == null) {
+      acc.sepEl ??= el;
+      acc.sep ??= el.getAttribute('data-expand-index');
     }
   }
 
   return Array.from(byTop.values())
     .sort((a, b) => a.top - b.top)
-    .map((entry) => entry.row);
+    .map((acc) => ({
+      el: (acc.addEl ?? acc.delEl ?? acc.sepEl) as HTMLElement,
+      addLine: acc.addLine,
+      delLine: acc.delLine,
+      sep: acc.sep,
+    }));
+}
+
+// Whether `row` is the one the cursor (a selection on `end`/`endSide`) sits on,
+// matched against the matching side's file line.
+function rowHoldsCursor(row: VisualRow, end: number, endSide: AnnotationSide): boolean {
+  return row.sep == null && (endSide === 'deletions' ? row.delLine === end : row.addLine === end);
+}
+
+// The rendered cell for a given file line on a given side. Scoped to the right
+// column in split (and disambiguated by line type in unified) so old-file line N
+// and new-file line N don't collide.
+function findCursorCell(shadow: ShadowRoot, line: number, side: AnnotationSide): HTMLElement | null {
+  const scope =
+    side === 'deletions'
+      ? (shadow.querySelector('[data-deletions]') ?? shadow)
+      : (shadow.querySelector('[data-additions]') ?? shadow);
+  for (const cell of scope.querySelectorAll<HTMLElement>(`[data-line="${line}"]`)) {
+    const type = cell.getAttribute('data-line-type') ?? '';
+    const isDel = type === 'change-deletion' || cell.closest('[data-deletions]') != null;
+    if ((side === 'deletions') === isDel) {
+      return cell;
+    }
+  }
+  return null;
 }
 
 // Whether a line cell belongs to a change (addition/deletion) vs context. The
@@ -385,24 +424,26 @@ export function DiffPane() {
         scrollLineIntoView(root, line, direction);
         return;
       }
-      // Locate the current cursor among the rows (by line + side, then sep).
+      // Locate the current cursor among the rows. Match against whichever side
+      // the selection is on — a context / modified row carries both file lines,
+      // so a deletions-side selection still resolves to its visual row instead
+      // of falling through to a same-numbered row near the top.
       let current = -1;
       if (selection) {
-        const side = selection.endSide ?? selection.side ?? 'additions';
-        current = rows.findIndex((row) => row.line === selection.end && row.side === side);
-        if (current === -1) {
-          current = rows.findIndex((row) => row.line === selection.end);
-        }
+        const endSide = selection.endSide ?? selection.side ?? 'additions';
+        current = rows.findIndex((row) => rowHoldsCursor(row, selection.end, endSide));
       } else if (sepCursorRef.current != null) {
         current = rows.findIndex((row) => row.sep === sepCursorRef.current);
       }
       if (current === -1) {
-        // No live cursor: resume from the first row visible in the viewport, so
-        // the first press lands on what the user is looking at.
+        // Cursor not on a rendered row (e.g. clicked elsewhere): resume from the
+        // first row visible in the viewport — never the top of the file.
         const viewportTop = root.querySelector('.overflow-auto')?.getBoundingClientRect().top ?? 0;
         const firstVisible = rows.findIndex((row) => Math.round(row.el.getBoundingClientRect().top) >= viewportTop - 1);
-        const desired = firstVisible === -1 ? (direction > 0 ? 0 : rows.length - 1) : firstVisible;
-        current = desired - direction; // so current + direction lands on `desired`
+        if (firstVisible === -1) {
+          return;
+        }
+        current = firstVisible - direction; // so current + direction lands on it
       }
       const next = rows[Math.min(rows.length - 1, Math.max(0, current + direction))];
       if (shadow) {
@@ -412,18 +453,24 @@ export function DiffPane() {
         sepCursorRef.current = next.sep;
         highlightSeparator(shadow, next.sep);
         store.setSelectedLines(null);
-      } else if (next.line != null) {
-        sepCursorRef.current = null;
-        anchorRef.current = {
-          line: next.line,
-          side: next.side,
-        };
-        store.setSelectedLines({
-          start: next.line,
-          end: next.line,
-          side: next.side,
-          endSide: next.side,
-        });
+      } else {
+        // Select on the row's primary side: additions when it has a new-side
+        // cell, else deletions (a pure-deletion row).
+        const side: AnnotationSide = next.addLine != null ? 'additions' : 'deletions';
+        const line = next.addLine ?? next.delLine;
+        if (line != null) {
+          sepCursorRef.current = null;
+          anchorRef.current = {
+            line,
+            side,
+          };
+          store.setSelectedLines({
+            start: line,
+            end: line,
+            side,
+            endSide: side,
+          });
+        }
       }
       next.el.scrollIntoView({
         block: 'nearest',
@@ -443,6 +490,29 @@ export function DiffPane() {
       }
       sepCursorRef.current = null;
     }
+  }, [
+    selectedLines,
+  ]);
+
+  // Keep the cursor row in view after the selection changes. The diff lib
+  // mis-scrolls (jumps toward the top) when a deletions-side selection is
+  // applied in split view; re-centering on the real cursor row — after the lib's
+  // own scroll, since parent layout effects run after the child's — corrects it.
+  // block:'nearest' is a no-op when the row is already visible, so clicks and
+  // drag-select aren't disturbed.
+  useLayoutEffect(() => {
+    if (!selectedLines) {
+      return;
+    }
+    const root = containerRef.current;
+    const shadow = root ? diffShadowRoot(root) : null;
+    if (!shadow) {
+      return;
+    }
+    const endSide = selectedLines.endSide ?? selectedLines.side ?? 'additions';
+    findCursorCell(shadow, selectedLines.end, endSide)?.scrollIntoView({
+      block: 'nearest',
+    });
   }, [
     selectedLines,
   ]);
