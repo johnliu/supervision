@@ -1,8 +1,8 @@
 // Renders the selected file's diff using @pierre/diffs. `diffStyle` switches
 // between unified and split. Clicking anywhere on a line selects it; drag /
-// shift-click extend the selection; j/k move the single-line cursor. A "+"
-// appears in the gutter to open an inline comment composer. Existing comments
-// render inline as annotations at their end line.
+// shift-click extend the selection; j/k move the single-line cursor and ]c/[c
+// jump between changes. A "+" appears in the gutter to open an inline comment
+// composer. Existing comments render inline as annotations at their end line.
 
 import { type DiffLineAnnotation, MultiFileDiff, Virtualizer } from '@pierre/diffs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -92,6 +92,45 @@ function navStops(shadow: ShadowRoot): HTMLElement[] {
   return Array.from(scope.querySelectorAll<HTMLElement>('[data-column-number], [data-separator]'));
 }
 
+// Whether a line cell belongs to a change (addition/deletion) vs context. The
+// `data-line-type` attribute lives on the row's cells; check the cell, its
+// nearest ancestor with the attribute, then any sibling cell in the same row.
+function isChangeCell(cell: HTMLElement): boolean {
+  const direct = cell.getAttribute('data-line-type');
+  if (direct) {
+    return direct.startsWith('change');
+  }
+  const near = cell.closest('[data-line-type]') ?? cell.parentElement?.querySelector('[data-line-type]') ?? null;
+  return (near?.getAttribute('data-line-type') ?? '').startsWith('change');
+}
+
+// New-side line numbers that begin each change block ("hunk"), top-to-bottom.
+// A block is a contiguous run of change lines; a context line or a collapsed
+// separator ends it. Used by ]c / [c to jump between changes. DOM-based, so it
+// covers the rendered hunks (changed lines are always rendered; only unchanged
+// context collapses).
+function changeBlockStarts(shadow: ShadowRoot): number[] {
+  const scope = shadow.querySelector('[data-additions]') ?? shadow;
+  const stops = Array.from(scope.querySelectorAll<HTMLElement>('[data-column-number], [data-separator]'));
+  const starts: number[] = [];
+  let prevWasChange = false;
+  for (const el of stops) {
+    if (el.hasAttribute('data-separator')) {
+      prevWasChange = false;
+      continue;
+    }
+    const isChange = isChangeCell(el);
+    if (isChange && !prevWasChange) {
+      const line = Number(el.getAttribute('data-column-number'));
+      if (Number.isFinite(line)) {
+        starts.push(line);
+      }
+    }
+    prevWasChange = isChange;
+  }
+  return starts;
+}
+
 // Highlight every separator element for one collapsed region (split view renders
 // it across the additions + deletions columns, so highlight them all).
 function highlightSeparator(shadow: ShadowRoot, expandIndex: string): void {
@@ -145,6 +184,11 @@ export function DiffPane() {
     line: number;
     side: AnnotationSide;
   } | null>(null);
+  // ]c / [c is a two-key (vim-style) sequence: the bracket arms a direction
+  // (+1 next / -1 prev), and a following 'c' jumps to that change. Auto-disarms
+  // after a short window.
+  const hunkArmedRef = useRef<number | null>(null);
+  const hunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A file edited again after approval appears in both buckets; let the user
   // toggle between the staged ("approved") side and the unstaged ("new") side.
@@ -179,6 +223,7 @@ export function DiffPane() {
   //   j/k        move a single-line cursor; collapsed "N unmodified lines" bars
   //              are stops too (outlined), and Enter/Space expands them.
   //   Shift+J/K  grow/shrink the line selection from the anchor.
+  //   ]c / [c    jump to the next / previous change, skipping context.
   // (event.code is layout- and shift-independent, so Shift+J still reports KeyJ.)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -208,6 +253,59 @@ export function DiffPane() {
           button.click();
         }
         return;
+      }
+
+      // ]c / [c — jump to the next / previous change ("hunk"). The bracket arms
+      // a direction; a following 'c' performs the jump.
+      if (event.key === ']' || event.key === '[') {
+        event.preventDefault();
+        hunkArmedRef.current = event.key === ']' ? 1 : -1;
+        if (hunkTimerRef.current) {
+          clearTimeout(hunkTimerRef.current);
+        }
+        hunkTimerRef.current = setTimeout(() => {
+          hunkArmedRef.current = null;
+        }, 600);
+        return;
+      }
+      if (event.key === 'c' && hunkArmedRef.current) {
+        const dir = hunkArmedRef.current;
+        hunkArmedRef.current = null;
+        if (hunkTimerRef.current) {
+          clearTimeout(hunkTimerRef.current);
+        }
+        // Consume the 'c' so the bare-'c' comment shortcut doesn't also fire.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const starts = shadow ? changeBlockStarts(shadow) : [];
+        if (shadow && starts.length > 0) {
+          const cursor = store.selectedLines?.end ?? firstRenderedLine(root) ?? 0;
+          const target =
+            dir > 0
+              ? (starts.find((line) => line > cursor) ?? starts[0])
+              : (starts.filter((line) => line < cursor).at(-1) ?? starts[starts.length - 1]);
+          clearSeparatorCursor(shadow);
+          sepCursorRef.current = null;
+          anchorRef.current = {
+            line: target,
+            side: 'additions',
+          };
+          store.setSelectedLines({
+            start: target,
+            end: target,
+            side: 'additions',
+            endSide: 'additions',
+          });
+          scrollLineIntoView(root, target, dir);
+        }
+        return;
+      }
+      // Any other key disarms a pending bracket.
+      if (hunkArmedRef.current) {
+        hunkArmedRef.current = null;
+        if (hunkTimerRef.current) {
+          clearTimeout(hunkTimerRef.current);
+        }
       }
 
       if (event.code !== 'KeyJ' && event.code !== 'KeyK') {
@@ -302,7 +400,12 @@ export function DiffPane() {
       });
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      if (hunkTimerRef.current) {
+        clearTimeout(hunkTimerRef.current);
+      }
+    };
   }, []);
 
   // When a line gets selected (click, drag, Shift+J/K), drop any bar highlight.

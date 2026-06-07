@@ -3,8 +3,20 @@
 Forward-looking work, not yet built. Each entry notes the rough shape and the
 pieces it touches so it can be picked up cleanly.
 
-## Diff viewer follow-ups
+_Nothing is currently queued — the previously-listed items (Cmd+K quick-open,
+Settings + persistence, project selection, and hunk navigation) are all
+implemented. The notes below are optional follow-ups, not commitments._
 
-- **Hunk navigation:** `]c` / `[c` to jump straight to the next/previous *change*
-  (skipping unchanged lines), complementing `j`/`k` which step line-by-line and
-  through collapsed bars.
+## Possible follow-ups
+
+- **Hunk navigation coverage.** `]c` / `[c` (in `DiffPane.tsx`) are DOM-based, so
+  they target the *rendered* change blocks on the new/additions side. A
+  deletion-only hunk (no added line) and any hunk virtualized off-screen aren't
+  landed on. A data-driven version — computing hunk boundaries from the diff
+  (e.g. a Bun-side `getHunks(path)` from `git diff -U0`, or the parsed hunks from
+  `@pierre/diffs`) — would cover both and survive virtualization.
+- **Change-nav menu items.** `Go ▸ Next/Previous Change` for discoverability
+  (the keys are a `]c`/`[c` sequence, so the items would be accelerator-less or
+  use a single-key accelerator). Routes through `handleMenuAction`, which would
+  need a way to reach the diff DOM (a registered navigator, since the store has
+  no DOM access today).
