@@ -5,7 +5,7 @@
 //
 //   ] / [ (with Cmd/Ctrl+Shift)  next / previous file
 //   j / k                         move the line cursor down / up (DiffPane)
-//   ]c / [c                       jump to next / previous change (DiffPane)
+//   ] / [                         jump to next / previous change (DiffPane)
 //   c                             comment on the current selection
 //   a / u                         approve / unapprove the current file
 //   r                             refresh

@@ -139,6 +139,16 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance): void {
         },
       ],
     },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Keyboard Shortcuts',
+          action: 'help:shortcuts',
+          accelerator: 'CommandOrControl+/',
+        },
+      ],
+    },
   ]);
 
   ApplicationMenu.on('application-menu-clicked', (event: unknown) => {

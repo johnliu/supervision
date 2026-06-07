@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { DiffPane } from './components/DiffPane';
 import { QuickOpen } from './components/QuickOpen';
 import { SettingsDialog } from './components/SettingsDialog';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -44,6 +45,7 @@ export default function App() {
       </div>
       <QuickOpen />
       <SettingsDialog />
+      <ShortcutsDialog />
     </TooltipProvider>
   );
 }

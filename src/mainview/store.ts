@@ -33,6 +33,8 @@ interface ReviewState {
   quickOpen: boolean;
   /** Whether the settings panel is showing. */
   settings: boolean;
+  /** Whether the keyboard-shortcuts help overlay is showing. */
+  shortcuts: boolean;
   diffStyle: DiffStyle;
   ignoreWhitespace: boolean;
   /** Recently-opened repo roots, newest first (for the project switcher). */
@@ -59,6 +61,7 @@ interface ReviewState {
   setDiffStyle: (style: DiffStyle) => void;
   setIgnoreWhitespace: (value: boolean) => void;
   setSettings: (open: boolean) => void;
+  setShortcuts: (open: boolean) => void;
   setCompare: (compare: CompareSpec) => Promise<void>;
   approve: (paths: string[]) => Promise<void>;
   unapprove: (paths: string[]) => Promise<void>;
@@ -197,6 +200,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     draft: null,
     quickOpen: false,
     settings: false,
+    shortcuts: false,
     diffStyle: 'split',
     ignoreWhitespace: true,
     recentProjects: [],
@@ -322,6 +326,12 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     setSettings: (open) => {
       set({
         settings: open,
+      });
+    },
+
+    setShortcuts: (open) => {
+      set({
+        shortcuts: open,
       });
     },
 
@@ -467,6 +477,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           break;
         case 'settings':
           state.setSettings(true);
+          break;
+        case 'help:shortcuts':
+          state.setShortcuts(true);
           break;
       }
     },

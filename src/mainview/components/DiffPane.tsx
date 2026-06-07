@@ -1,6 +1,6 @@
 // Renders the selected file's diff using @pierre/diffs. `diffStyle` switches
 // between unified and split. Clicking anywhere on a line selects it; drag /
-// shift-click extend the selection; j/k move the single-line cursor and ]c/[c
+// shift-click extend the selection; j/k move the single-line cursor and ] / [
 // jump between changes. A "+" appears in the gutter to open an inline comment
 // composer. Existing comments render inline as annotations at their end line.
 
@@ -184,11 +184,6 @@ export function DiffPane() {
     line: number;
     side: AnnotationSide;
   } | null>(null);
-  // ]c / [c is a two-key (vim-style) sequence: the bracket arms a direction
-  // (+1 next / -1 prev), and a following 'c' jumps to that change. Auto-disarms
-  // after a short window.
-  const hunkArmedRef = useRef<number | null>(null);
-  const hunkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A file edited again after approval appears in both buckets; let the user
   // toggle between the staged ("approved") side and the unstaged ("new") side.
@@ -223,7 +218,7 @@ export function DiffPane() {
   //   j/k        move a single-line cursor; collapsed "N unmodified lines" bars
   //              are stops too (outlined), and Enter/Space expands them.
   //   Shift+J/K  grow/shrink the line selection from the anchor.
-  //   ]c / [c    jump to the next / previous change, skipping context.
+  //   ] / [      jump to the next / previous change, skipping context.
   // (event.code is layout- and shift-independent, so Shift+J still reports KeyJ.)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -255,28 +250,12 @@ export function DiffPane() {
         return;
       }
 
-      // ]c / [c — jump to the next / previous change ("hunk"). The bracket arms
-      // a direction; a following 'c' performs the jump.
+      // ] / [ — jump to the next / previous change ("hunk"), skipping context
+      // lines and collapsed bars. (File nav is Cmd+Shift+] / [ on the menu, so
+      // the bare brackets are free.)
       if (event.key === ']' || event.key === '[') {
         event.preventDefault();
-        hunkArmedRef.current = event.key === ']' ? 1 : -1;
-        if (hunkTimerRef.current) {
-          clearTimeout(hunkTimerRef.current);
-        }
-        hunkTimerRef.current = setTimeout(() => {
-          hunkArmedRef.current = null;
-        }, 600);
-        return;
-      }
-      if (event.key === 'c' && hunkArmedRef.current) {
-        const dir = hunkArmedRef.current;
-        hunkArmedRef.current = null;
-        if (hunkTimerRef.current) {
-          clearTimeout(hunkTimerRef.current);
-        }
-        // Consume the 'c' so the bare-'c' comment shortcut doesn't also fire.
-        event.preventDefault();
-        event.stopImmediatePropagation();
+        const dir = event.key === ']' ? 1 : -1;
         const starts = shadow ? changeBlockStarts(shadow) : [];
         if (shadow && starts.length > 0) {
           const cursor = store.selectedLines?.end ?? firstRenderedLine(root) ?? 0;
@@ -299,13 +278,6 @@ export function DiffPane() {
           scrollLineIntoView(root, target, dir);
         }
         return;
-      }
-      // Any other key disarms a pending bracket.
-      if (hunkArmedRef.current) {
-        hunkArmedRef.current = null;
-        if (hunkTimerRef.current) {
-          clearTimeout(hunkTimerRef.current);
-        }
       }
 
       if (event.code !== 'KeyJ' && event.code !== 'KeyK') {
@@ -400,12 +372,7 @@ export function DiffPane() {
       });
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      if (hunkTimerRef.current) {
-        clearTimeout(hunkTimerRef.current);
-      }
-    };
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   // When a line gets selected (click, drag, Shift+J/K), drop any bar highlight.

@@ -9,14 +9,9 @@ implemented. The notes below are optional follow-ups, not commitments._
 
 ## Possible follow-ups
 
-- **Hunk navigation coverage.** `]c` / `[c` (in `DiffPane.tsx`) are DOM-based, so
+- **Hunk navigation coverage.** `]` / `[` (in `DiffPane.tsx`) are DOM-based, so
   they target the *rendered* change blocks on the new/additions side. A
   deletion-only hunk (no added line) and any hunk virtualized off-screen aren't
   landed on. A data-driven version — computing hunk boundaries from the diff
   (e.g. a Bun-side `getHunks(path)` from `git diff -U0`, or the parsed hunks from
   `@pierre/diffs`) — would cover both and survive virtualization.
-- **Change-nav menu items.** `Go ▸ Next/Previous Change` for discoverability
-  (the keys are a `]c`/`[c` sequence, so the items would be accelerator-less or
-  use a single-key accelerator). Routes through `handleMenuAction`, which would
-  need a way to reach the diff DOM (a registered navigator, since the store has
-  no DOM access today).
