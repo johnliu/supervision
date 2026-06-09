@@ -72,8 +72,11 @@ const mainWindow = new BrowserWindow({
 
 export { mainWindow, rpc };
 
-// Native menu bar; menu clicks are routed to the webview over `rpc`.
-setupApplicationMenu(rpc);
+// Native menu bar; menu clicks are routed to the webview over `rpc` (except
+// dev tools, which toggles the window's webview inspector directly).
+setupApplicationMenu(rpc, {
+  onToggleDevTools: () => mainWindow.webview?.toggleDevTools(),
+});
 
 const initialRoot = await getRepoRoot(getCurrentRepo());
 rewatch(initialRoot);

@@ -7,7 +7,13 @@
 import { ApplicationMenu } from 'electrobun/bun';
 import type { SupervisionRpcInstance } from './rpc';
 
-export function setupApplicationMenu(rpc: SupervisionRpcInstance): void {
+export interface ApplicationMenuOptions {
+  /** Toggle the webview's developer tools — a window op, handled Bun-side
+   * rather than routed to the webview like the other menu actions. */
+  onToggleDevTools?: () => void;
+}
+
+export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: ApplicationMenuOptions = {}): void {
   ApplicationMenu.setApplicationMenu([
     {
       label: 'Supervision',
@@ -114,6 +120,14 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance): void {
           action: 'view:toggle-whitespace',
           accelerator: 'CommandOrControl+Shift+W',
         },
+        {
+          type: 'separator',
+        },
+        {
+          label: 'Toggle Developer Tools',
+          action: 'devtools',
+          accelerator: 'CommandOrControl+Alt+I',
+        },
       ],
     },
     {
@@ -159,10 +173,17 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance): void {
         };
       }
     )?.data?.action;
-    if (action) {
-      rpc.send.menuAction({
-        action,
-      });
+    if (!action) {
+      return;
     }
+    // Dev tools is a window/webview operation, handled here rather than routed
+    // to the webview like the other actions.
+    if (action === 'devtools') {
+      options.onToggleDevTools?.();
+      return;
+    }
+    rpc.send.menuAction({
+      action,
+    });
   });
 }

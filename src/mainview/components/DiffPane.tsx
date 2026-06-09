@@ -21,6 +21,21 @@ type AnnotationMeta =
       kind: 'draft';
     };
 
+// Verbose j/k navigation + scroll logging, to debug cursor/scroll behavior in
+// the Developer Tools console (View ▸ Toggle Developer Tools). On by default;
+// silence with `window.__navDebug = false` from the console.
+function navLog(label: string, detail?: Record<string, unknown>): void {
+  if (
+    (
+      globalThis as {
+        __navDebug?: boolean;
+      }
+    ).__navDebug !== false
+  ) {
+    console.log(`[nav] ${label}`, detail ?? '');
+  }
+}
+
 // Find the additions-side cell for `line` in the diff's open shadow DOM (falls
 // back to either side / light DOM). Used to scroll the j/k cursor into view.
 function findLineCell(root: HTMLElement, line: number): HTMLElement | null {
@@ -71,11 +86,21 @@ function scrollRowIntoView(root: HTMLElement, el: HTMLElement): void {
   const elRect = el.getBoundingClientRect();
   const viewRect = scroller.getBoundingClientRect();
   const margin = 40;
+  const before = scroller.scrollTop;
   if (elRect.top < viewRect.top + margin) {
     scroller.scrollTop -= viewRect.top + margin - elRect.top;
   } else if (elRect.bottom > viewRect.bottom - margin) {
     scroller.scrollTop += elRect.bottom - viewRect.bottom + margin;
   }
+  navLog('scrollRowIntoView', {
+    elTop: Math.round(elRect.top),
+    elBottom: Math.round(elRect.bottom),
+    viewTop: Math.round(viewRect.top),
+    viewBottom: Math.round(viewRect.bottom),
+    scrollTopBefore: Math.round(before),
+    scrollTopAfter: Math.round(scroller.scrollTop),
+    moved: Math.round(scroller.scrollTop - before),
+  });
 }
 
 // Scroll a cursor line into view; if it isn't rendered (collapsed/virtualized),
@@ -453,6 +478,15 @@ export function DiffPane() {
       } else if (sepCursorRef.current != null) {
         current = rows.findIndex((row) => row.sep === sepCursorRef.current);
       }
+      navLog(event.code === 'KeyJ' ? 'j (down)' : 'k (up)', {
+        rows: rows.length,
+        current,
+        foundVia: selection
+          ? `selection ${selection.end}/${selection.endSide ?? selection.side}`
+          : sepCursorRef.current != null
+            ? `sep ${sepCursorRef.current}`
+            : 'none',
+      });
       // If the cursor row has been scrolled out of view (e.g. the user
       // wheel-scrolled away), resume from the viewport rather than snapping back
       // to the off-screen cursor.
@@ -460,6 +494,11 @@ export function DiffPane() {
         const rect = rows[current].el.getBoundingClientRect();
         const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
         if (view && (rect.bottom <= view.top || rect.top >= view.bottom)) {
+          navLog('cursor off-screen → resume from viewport', {
+            cursorTop: Math.round(rect.top),
+            viewTop: Math.round(view.top),
+            viewBottom: Math.round(view.bottom),
+          });
           current = -1;
         }
       }
@@ -468,12 +507,24 @@ export function DiffPane() {
         // first row visible in the viewport — never the top of the file.
         const viewportTop = root.querySelector('.overflow-auto')?.getBoundingClientRect().top ?? 0;
         const firstVisible = rows.findIndex((row) => Math.round(row.el.getBoundingClientRect().top) >= viewportTop - 1);
+        navLog('resume from viewport', {
+          firstVisible,
+        });
         if (firstVisible === -1) {
           return;
         }
         current = firstVisible - direction; // so current + direction lands on it
       }
-      const next = rows[Math.min(rows.length - 1, Math.max(0, current + direction))];
+      const nextIndex = Math.min(rows.length - 1, Math.max(0, current + direction));
+      const next = rows[nextIndex];
+      navLog('→ target', {
+        fromIndex: current,
+        toIndex: nextIndex,
+        addLine: next.addLine,
+        delLine: next.delLine,
+        sep: next.sep,
+        clamped: nextIndex === current,
+      });
       if (shadow) {
         clearSeparatorCursor(shadow);
       }
