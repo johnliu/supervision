@@ -403,12 +403,36 @@ export function DiffPane() {
   const navStopsRef = useRef<NavStop[]>([]);
   navStopsRef.current = navStops;
   // Rebuild stops for a hypothetical expansion map, closing over the current
-  // render's diff/inputs. The Enter handler uses this to refresh navStopsRef
+  // render's diff/inputs. recordExpansion uses this to refresh navStopsRef
   // synchronously, so a j/k pressed in the same frame as an expand already sees
   // the revealed lines (setExpandedHunks only updates the model on re-render).
   const rebuildNavStopsRef = useRef<(expanded: ExpansionMap) => NavStop[]>(() => []);
   rebuildNavStopsRef.current = (expanded: ExpansionMap) =>
     fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents), expanded) : [];
+
+  // Advance our expansion map the way the renderer advances its own — the
+  // single bookkeeping point for BOTH expansion entry points (Enter on a bar,
+  // and mouse clicks on a bar's pill/buttons). Count may be Infinity
+  // (shift-click / "Expand all"); the clamping in buildNavStops handles it.
+  const recordExpansion = (expandIndex: number, direction: 'up' | 'down' | 'both', count: number) => {
+    const region = {
+      ...(expandedHunksRef.current.get(expandIndex) ?? {
+        fromStart: 0,
+        fromEnd: 0,
+      }),
+    };
+    if (direction === 'up' || direction === 'both') {
+      region.fromStart += count;
+    }
+    if (direction === 'down' || direction === 'both') {
+      region.fromEnd += count;
+    }
+    const nextExpanded = new Map(expandedHunksRef.current);
+    nextExpanded.set(expandIndex, region);
+    expandedHunksRef.current = nextExpanded;
+    navStopsRef.current = rebuildNavStopsRef.current(nextExpanded);
+    setExpandedHunks(nextExpanded);
+  };
 
   const filePath = file?.path ?? '';
   // Item id doubles as the React key: a new file remounts the view, so each
@@ -709,25 +733,7 @@ export function DiffPane() {
           expandIndex: stop.expandIndex,
           direction: stop.expandDirection,
         });
-        const region = {
-          ...(expandedHunksRef.current.get(stop.expandIndex) ?? {
-            fromStart: 0,
-            fromEnd: 0,
-          }),
-        };
-        if (stop.expandDirection === 'up' || stop.expandDirection === 'both') {
-          region.fromStart += EXPANSION_LINE_COUNT;
-        }
-        if (stop.expandDirection === 'down' || stop.expandDirection === 'both') {
-          region.fromEnd += EXPANSION_LINE_COUNT;
-        }
-        const nextExpanded = new Map(expandedHunksRef.current);
-        nextExpanded.set(stop.expandIndex, region);
-        // Refresh the stop list now (not just on the re-render setExpandedHunks
-        // schedules) so an immediately-following j/k already sees the revealed
-        // lines as stops instead of leaping over the bar to the next hunk.
-        navStopsRef.current = rebuildNavStopsRef.current(nextExpanded);
-        setExpandedHunks(nextExpanded);
+        recordExpansion(stop.expandIndex, stop.expandDirection, EXPANSION_LINE_COUNT);
         instance.expandHunk(stop.expandIndex, stop.expandDirection);
       }
       return;
@@ -913,6 +919,67 @@ export function DiffPane() {
     const onKeyDown = (event: KeyboardEvent) => onKeyDownRef.current(event);
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Mouse expansion: clicking a bar's pill or expand buttons is handled
+  // entirely inside the diff lib (InteractionManager -> expandHunk), so the nav
+  // model would never learn about those revealed lines — j/k would leap past
+  // them. Mirror the lib's exact click semantics (shift-click and "Expand all"
+  // mean expand-everything) into recordExpansion. Bookkeeping only: the lib
+  // still performs the renderer expansion itself.
+  const onExpandClickRef = useRef<(event: MouseEvent) => void>(() => {});
+  onExpandClickRef.current = (event: MouseEvent) => {
+    const root = containerRef.current;
+    if (!root || !(event.target instanceof Node) || !root.contains(event.target)) {
+      return;
+    }
+    // Same upward walk as the lib's click target resolution: an expand trigger
+    // (button or the "N unmodified lines" pill), then the enclosing separator's
+    // expand-index.
+    let direction: 'up' | 'down' | 'both' | null = null;
+    let all = false;
+    let expandIndex: number | null = null;
+    for (const node of event.composedPath()) {
+      if (!(node instanceof HTMLElement)) {
+        continue;
+      }
+      if (direction == null) {
+        if (node.hasAttribute('data-expand-button') || node.hasAttribute('data-unmodified-lines')) {
+          direction = node.hasAttribute('data-expand-up')
+            ? 'up'
+            : node.hasAttribute('data-expand-down')
+              ? 'down'
+              : 'both';
+          all = node.hasAttribute('data-expand-all-button');
+        }
+        continue;
+      }
+      const attr = node.getAttribute('data-expand-index');
+      if (attr != null) {
+        const parsed = Number.parseInt(attr, 10);
+        if (!Number.isNaN(parsed)) {
+          expandIndex = parsed;
+        }
+        break;
+      }
+    }
+    if (direction == null || expandIndex == null) {
+      return;
+    }
+    const full = all || event.shiftKey;
+    navLog('expand (click)', {
+      expandIndex,
+      direction: full ? 'both' : direction,
+      full,
+    });
+    recordExpansion(expandIndex, full ? 'both' : direction, full ? Number.POSITIVE_INFINITY : EXPANSION_LINE_COUNT);
+  };
+  useEffect(() => {
+    // Capture phase: the lib's own click handler lives inside the shadow root
+    // and may stop propagation; capture sees the click regardless.
+    const onClick = (event: MouseEvent) => onExpandClickRef.current(event);
+    window.addEventListener('click', onClick, true);
+    return () => window.removeEventListener('click', onClick, true);
   }, []);
 
   // When a line gets selected (click, drag, Shift+J/K), drop any bar highlight.
