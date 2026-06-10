@@ -14,6 +14,20 @@
         "--strictPort"
       ],
       "port": 5173
+    },
+    {
+      "name": "vite-web",
+      "runtimeExecutable": "devbox",
+      "runtimeArgs": [
+        "run",
+        "--",
+        "bunx",
+        "vite",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
+      "port": 5175
     }
   ]
 }

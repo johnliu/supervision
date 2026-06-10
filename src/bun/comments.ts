@@ -5,6 +5,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { renderMarkdown } from '../shared/reviewMarkdown';
 import type { AnnotationSide, Comment, CommentsFile } from '../shared/types';
 
 export interface NewComment {
@@ -89,33 +90,6 @@ export async function deleteComment(repoRoot: string, id: string): Promise<Comme
   const next = (await readComments(repoRoot)).filter((comment) => comment.id !== id);
   await writeComments(repoRoot, next);
   return next;
-}
-
-function renderMarkdown(repoRoot: string, comments: Comment[]): string {
-  const lines = [
-    `# Code review for ${repoRoot}`,
-    '',
-    `${comments.length} open comment(s).`,
-    '',
-  ];
-  const byFile = new Map<string, Comment[]>();
-  for (const comment of comments) {
-    const list = byFile.get(comment.path) ?? [];
-    list.push(comment);
-    byFile.set(comment.path, list);
-  }
-  for (const [file, list] of byFile) {
-    lines.push(`## ${file}`, '');
-    for (const comment of list.sort((a, b) => a.line - b.line)) {
-      const loc =
-        comment.endLine && comment.endLine !== comment.line
-          ? `${file}:${comment.line}-${comment.endLine}`
-          : `${file}:${comment.line}`;
-      lines.push(`- **${loc}** (${comment.side}): ${comment.body}`);
-    }
-    lines.push('');
-  }
-  return lines.join('\n');
 }
 
 export async function exportMarkdown(repoRoot: string): Promise<{

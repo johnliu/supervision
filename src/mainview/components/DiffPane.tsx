@@ -295,7 +295,13 @@ export function DiffPane() {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<ViewHandle>(null);
   // The scroll container CodeView renders (clientHeight = viewport height).
+  // CodeView owns the element, so the testid (e2e geometry assertions) is
+  // attached in the ref callback rather than as JSX.
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const attachScroller = useCallback((node: HTMLDivElement | null) => {
+    scrollerRef.current = node;
+    node?.setAttribute('data-testid', 'diff-scroller');
+  }, []);
   // Logical scrollTop, fed by CodeView's onScroll (it differs from the DOM
   // scrollTop once the view rebases very tall content).
   const scrollTopRef = useRef(0);
@@ -1053,6 +1059,7 @@ export function DiffPane() {
   return (
     <div
       ref={containerRef}
+      data-testid="diff-pane"
       className="flex h-full flex-col"
     >
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-sidebar px-3 text-xs">
@@ -1108,7 +1115,7 @@ export function DiffPane() {
         <CodeView<AnnotationMeta>
           key={itemId}
           ref={viewRef}
-          containerRef={scrollerRef}
+          containerRef={attachScroller}
           className="min-h-0 flex-1 overflow-auto bg-background select-none"
           items={items}
           options={diffOptions}
