@@ -12,10 +12,13 @@
 // by CodeView's layout model (scrollTo / getLinePosition) in DiffPane; the
 // DOM is only touched to paint the cursor on a collapsed-context bar.
 //
-// Known, accepted simplification: lines revealed by expanding a collapsed bar
-// ("context-expanded") are NOT stops — after expanding, j/k continues to the
-// next hunk line. Clicking an expanded line still works: the cursor resolves
-// to the nearest modeled stop.
+// Expansion: `buildNavStops` takes the per-bar expansion map (kept in
+// lockstep with the renderer by DiffPane) and turns revealed lines into real
+// context stops, shrinking or removing the gap stop — so j/k steps through
+// expanded lines exactly as the renderer draws them.
+//
+// Behavior contract: docs/specs/diff-navigation.md (STOP/EXP/CUR/NAV items);
+// diffNav.test.ts enforces it.
 
 import type { FileDiffMetadata } from '@pierre/diffs';
 import type { AnnotationSide } from '../../shared/types';
@@ -46,11 +49,11 @@ export interface GapStop {
    * the expand button the renderer draws: the leading bar (above the first
    * hunk) expands 'down', the trailing bar 'up', bars between hunks 'both'. */
   expandDirection: 'up' | 'down' | 'both';
-  /** Unchanged lines hidden behind the bar. */
+  /** Unchanged lines still hidden behind the bar (after expansion). */
   lines: number;
-  /** The new-file line range this gap covers (inclusive). A selection on a
-   * line revealed by expanding the bar falls inside this range and resolves
-   * to the gap stop. */
+  /** The new-file line range still hidden (inclusive). A selection on a
+   * hidden line falls inside this range and resolves to the gap stop;
+   * revealed lines are ordinary context stops instead. */
   addStart: number;
   addEnd: number;
   /** The old-file line range this gap covers (inclusive). */
