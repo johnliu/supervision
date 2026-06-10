@@ -667,234 +667,250 @@ export function DiffPane() {
   //   Shift+J/K  grow/shrink the line selection from the anchor.
   //   ] / [      jump to the next / previous change block, skipping context.
   // (event.code is layout- and shift-independent, so Shift+J still reports KeyJ.)
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-      const stops = navStopsRef.current;
-      const id = itemIdRef.current;
-      const view = viewRef.current?.getInstance();
-      if (!id || stops.length === 0 || !view) {
-        return;
-      }
-      const store = useReviewStore.getState();
-      const scrollTop = scrollTopRef.current;
-      const viewportHeight = scrollerRef.current?.clientHeight ?? 0;
+  //
+  // The handler lives in a ref reassigned every render, and the []-effect
+  // registers only a trampoline. A directly-registered closure goes stale when
+  // react-refresh hot-swaps this module WITHOUT remounting (the []-effect never
+  // re-runs) — the symptom is keyboard behavior silently running last-launch
+  // code until the app restarts.
+  const onKeyDownRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  onKeyDownRef.current = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') {
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    const stops = navStopsRef.current;
+    const id = itemIdRef.current;
+    const view = viewRef.current?.getInstance();
+    if (!id || stops.length === 0 || !view) {
+      return;
+    }
+    const store = useReviewStore.getState();
+    const scrollTop = scrollTopRef.current;
+    const viewportHeight = scrollerRef.current?.clientHeight ?? 0;
 
-      // Enter / Space expands the collapsed bar the cursor is on — through the
-      // model API (no DOM buttons involved). We advance OUR expansion state by
-      // the same line count the renderer uses, so buildNavStops reveals exactly
-      // the lines the renderer reveals: j/k then steps through them instead of
-      // leaping past to the next hunk. We don't scroll — CodeView keeps the
-      // viewport anchored across the layout change. If the bar is fully revealed
-      // the gap stop vanishes and the [navStops] effect drops sepCursorRef.
-      if ((event.key === 'Enter' || event.code === 'Space') && sepCursorRef.current != null) {
-        const index = gapStopIndex(stops, Number(sepCursorRef.current));
-        const stop = index !== -1 ? (stops[index] as GapStop) : null;
-        const instance = renderedDiffInstance(view);
-        if (stop && instance) {
-          event.preventDefault();
-          navLog('expand', {
-            expandIndex: stop.expandIndex,
-            direction: stop.expandDirection,
-          });
-          const region = {
-            ...(expandedHunksRef.current.get(stop.expandIndex) ?? {
-              fromStart: 0,
-              fromEnd: 0,
-            }),
-          };
-          if (stop.expandDirection === 'up' || stop.expandDirection === 'both') {
-            region.fromStart += EXPANSION_LINE_COUNT;
-          }
-          if (stop.expandDirection === 'down' || stop.expandDirection === 'both') {
-            region.fromEnd += EXPANSION_LINE_COUNT;
-          }
-          const nextExpanded = new Map(expandedHunksRef.current);
-          nextExpanded.set(stop.expandIndex, region);
-          // Refresh the stop list now (not just on the re-render setExpandedHunks
-          // schedules) so an immediately-following j/k already sees the revealed
-          // lines as stops instead of leaping over the bar to the next hunk.
-          navStopsRef.current = rebuildNavStopsRef.current(nextExpanded);
-          setExpandedHunks(nextExpanded);
-          instance.expandHunk(stop.expandIndex, stop.expandDirection);
-        }
-        return;
-      }
-
-      const isBracket = event.key === ']' || event.key === '[';
-      const isJK = event.code === 'KeyJ' || event.code === 'KeyK';
-      if (!isBracket && !isJK) {
-        return;
-      }
-      event.preventDefault();
-      const direction: 1 | -1 = event.key === ']' || event.code === 'KeyJ' ? 1 : -1;
-
-      // Scroll a stop's row toward view. align:'nearest' is a no-op when the
-      // row (plus margin) is already visible; otherwise the view moves the
-      // minimum distance. The lib re-resolves the target every frame until
-      // the scroll settles, so late row measurements can't strand the cursor.
-      const scrollCursorTo = (stop: NavStop) => {
-        const anchor = stopAnchor(stop);
-        navLog('scrollTo', {
-          line: anchor.line,
-          side: anchor.side,
+    // Enter / Space expands the collapsed bar the cursor is on — through the
+    // model API (no DOM buttons involved). We advance OUR expansion state by
+    // the same line count the renderer uses, so buildNavStops reveals exactly
+    // the lines the renderer reveals: j/k then steps through them instead of
+    // leaping past to the next hunk. We don't scroll — CodeView keeps the
+    // viewport anchored across the layout change. If the bar is fully revealed
+    // the gap stop vanishes and the [navStops] effect drops sepCursorRef.
+    if ((event.key === 'Enter' || event.code === 'Space') && sepCursorRef.current != null) {
+      const index = gapStopIndex(stops, Number(sepCursorRef.current));
+      const stop = index !== -1 ? (stops[index] as GapStop) : null;
+      const instance = renderedDiffInstance(view);
+      if (stop && instance) {
+        event.preventDefault();
+        navLog('expand', {
+          expandIndex: stop.expandIndex,
+          direction: stop.expandDirection,
         });
-        viewRef.current?.scrollTo({
-          type: 'line',
-          id,
-          lineNumber: anchor.line,
-          side: anchor.side,
-          align: 'nearest',
-          offset: NAV_MARGIN,
-          behavior: 'instant',
-        });
-      };
-
-      // Land the cursor on a stop: update selection / bar highlight + scroll.
-      // Landing on a bar deliberately does NOT touch the line selection — the
-      // bar highlight alone is the cursor; sepCursorRef takes precedence when
-      // resolving it below.
-      const applyStop = (index: number) => {
-        const stop = stops[index];
-        const shadow = diffShadow(view);
-        if (shadow) {
-          clearSeparatorCursor(shadow);
-        }
-        if (stop.kind === 'gap') {
-          sepCursorRef.current = String(stop.expandIndex);
-          if (shadow) {
-            highlightSeparator(shadow, sepCursorRef.current);
-          }
-        } else {
-          sepCursorRef.current = null;
-          anchorRef.current = {
-            line: stop.line,
-            side: stop.side,
-          };
-          store.setSelectedLines({
-            start: stop.line,
-            end: stop.line,
-            side: stop.side,
-            endSide: stop.side,
-          });
-        }
-        scrollCursorTo(stop);
-      };
-
-      // Where is the cursor? Try, in order, the highlighted bar (it outranks
-      // the still-present line selection) then the selection's end on its own
-      // side — but accept each only if it is actually on screen. A candidate
-      // scrolled out of view is skipped, so after expanding a bar that gets
-      // pushed off-screen, j/k resumes from the still-visible line selection
-      // (stepping straight into the freshly revealed lines) rather than the bar.
-      // If neither is visible, resume from the first row in the viewport.
-      const selection = store.selectedLines;
-      const inView = (index: number) =>
-        index !== -1 && stopInViewport(view, id, scrollTop, viewportHeight, stops[index]);
-      let cursor = -1;
-      if (sepCursorRef.current != null) {
-        const barIndex = gapStopIndex(stops, Number(sepCursorRef.current));
-        if (inView(barIndex)) {
-          cursor = barIndex;
-        }
-      }
-      if (cursor === -1 && selection) {
-        const endSide = (selection.endSide ?? selection.side ?? 'additions') as AnnotationSide;
-        let selIndex = stopIndexForSelection(stops, selection.end, endSide);
-        if (selIndex === -1) {
-          // Not a modeled row — a line still hidden behind a bar resolves to that
-          // bar's gap stop; anything else falls back to the nearest stop.
-          selIndex = gapIndexForLine(stops, selection.end, endSide);
-        }
-        if (selIndex === -1) {
-          selIndex = nearestLineStop(stops, selection.end);
-        }
-        if (inView(selIndex)) {
-          cursor = selIndex;
-        }
-      }
-      if (cursor === -1) {
-        navLog('cursor off-screen, resuming from viewport');
-        const visible = firstVisibleStopIndex(view, id, scrollTop, viewportHeight, stops);
-        if (visible === -1) {
-          return;
-        }
-        // Step "onto" the visible row rather than past it.
-        cursor = visible - direction;
-      }
-
-      // ] / [ — jump to the start of the next / previous change block.
-      if (isBracket) {
-        const targetIndex = nextChangeIndex(stops, cursor, direction);
-        navLog(event.key, {
-          from: cursor,
-          to: targetIndex,
-        });
-        if (targetIndex !== -1) {
-          applyStop(targetIndex);
-        }
-        return;
-      }
-
-      // Shift+J/K — move the selection's END to the adjacent line stop
-      // (skipping bars) while the anchor stays put.
-      if (event.shiftKey) {
-        let endIndex = cursor;
-        do {
-          endIndex += direction;
-        } while (stops[endIndex] && stops[endIndex].kind !== 'line');
-        const endStop = stops[endIndex];
-        if (endStop?.kind !== 'line') {
-          return;
-        }
-        const anchor = anchorRef.current ?? {
-          line: endStop.line,
-          side: endStop.side,
+        const region = {
+          ...(expandedHunksRef.current.get(stop.expandIndex) ?? {
+            fromStart: 0,
+            fromEnd: 0,
+          }),
         };
-        anchorRef.current = anchor;
-        store.setSelectedLines({
-          start: anchor.line,
-          side: anchor.side,
-          end: endStop.line,
-          endSide: endStop.side,
-        });
-        scrollCursorTo(endStop);
-        return;
+        if (stop.expandDirection === 'up' || stop.expandDirection === 'both') {
+          region.fromStart += EXPANSION_LINE_COUNT;
+        }
+        if (stop.expandDirection === 'down' || stop.expandDirection === 'both') {
+          region.fromEnd += EXPANSION_LINE_COUNT;
+        }
+        const nextExpanded = new Map(expandedHunksRef.current);
+        nextExpanded.set(stop.expandIndex, region);
+        // Refresh the stop list now (not just on the re-render setExpandedHunks
+        // schedules) so an immediately-following j/k already sees the revealed
+        // lines as stops instead of leaping over the bar to the next hunk.
+        navStopsRef.current = rebuildNavStopsRef.current(nextExpanded);
+        setExpandedHunks(nextExpanded);
+        instance.expandHunk(stop.expandIndex, stop.expandDirection);
       }
+      return;
+    }
 
-      // Plain j/k — step to the adjacent stop. A bar that was expanded away
-      // (its element no longer renders) is skipped; bars adjacent to the
-      // in-viewport cursor are inside the render window, so a missing element
-      // means expanded, not unrendered.
+    const isBracket = event.key === ']' || event.key === '[';
+    const isJK = event.code === 'KeyJ' || event.code === 'KeyK';
+    if (!isBracket && !isJK) {
+      return;
+    }
+    event.preventDefault();
+    const direction: 1 | -1 = event.key === ']' || event.code === 'KeyJ' ? 1 : -1;
+
+    // Scroll a stop's row toward view. align:'nearest' is a no-op when the
+    // row (plus margin) is already visible; otherwise the view moves the
+    // minimum distance. The lib re-resolves the target every frame until
+    // the scroll settles, so late row measurements can't strand the cursor.
+    const scrollCursorTo = (stop: NavStop) => {
+      const anchor = stopAnchor(stop);
+      navLog('scrollTo', {
+        line: anchor.line,
+        side: anchor.side,
+      });
+      viewRef.current?.scrollTo({
+        type: 'line',
+        id,
+        lineNumber: anchor.line,
+        side: anchor.side,
+        align: 'nearest',
+        offset: NAV_MARGIN,
+        behavior: 'instant',
+      });
+    };
+
+    // Land the cursor on a stop: update selection / bar highlight + scroll.
+    // Landing on a bar deliberately does NOT touch the line selection — the
+    // bar highlight alone is the cursor; sepCursorRef takes precedence when
+    // resolving it below.
+    const applyStop = (index: number) => {
+      const stop = stops[index];
       const shadow = diffShadow(view);
-      let next = cursor + direction;
-      while (
-        stops[next] &&
-        stops[next].kind === 'gap' &&
-        shadow &&
-        findSeparator(shadow, (stops[next] as GapStop).expandIndex) == null
-      ) {
-        navLog('skipping expanded-away bar', {
-          expandIndex: (stops[next] as GapStop).expandIndex,
-        });
-        next += direction;
+      if (shadow) {
+        clearSeparatorCursor(shadow);
       }
-      if (next < 0 || next >= stops.length) {
+      if (stop.kind === 'gap') {
+        sepCursorRef.current = String(stop.expandIndex);
+        if (shadow) {
+          highlightSeparator(shadow, sepCursorRef.current);
+        }
+      } else {
+        sepCursorRef.current = null;
+        anchorRef.current = {
+          line: stop.line,
+          side: stop.side,
+        };
+        store.setSelectedLines({
+          start: stop.line,
+          end: stop.line,
+          side: stop.side,
+          endSide: stop.side,
+        });
+      }
+      scrollCursorTo(stop);
+    };
+
+    // Where is the cursor? Try, in order, the highlighted bar (it outranks
+    // the still-present line selection) then the selection's end on its own
+    // side — but accept each only if it is actually on screen. A candidate
+    // scrolled out of view is skipped, so after expanding a bar that gets
+    // pushed off-screen, j/k resumes from the still-visible line selection
+    // (stepping straight into the freshly revealed lines) rather than the bar.
+    // If neither is visible, resume from the first row in the viewport.
+    const selection = store.selectedLines;
+    const inView = (index: number) => index !== -1 && stopInViewport(view, id, scrollTop, viewportHeight, stops[index]);
+    let cursor = -1;
+    if (sepCursorRef.current != null) {
+      const barIndex = gapStopIndex(stops, Number(sepCursorRef.current));
+      if (inView(barIndex)) {
+        cursor = barIndex;
+      }
+    }
+    if (cursor === -1 && selection) {
+      const endSide = (selection.endSide ?? selection.side ?? 'additions') as AnnotationSide;
+      let selIndex = stopIndexForSelection(stops, selection.end, endSide);
+      if (selIndex === -1) {
+        // Not a modeled row — a line still hidden behind a bar resolves to that
+        // bar's gap stop; anything else falls back to the nearest stop.
+        selIndex = gapIndexForLine(stops, selection.end, endSide);
+      }
+      if (selIndex === -1) {
+        selIndex = nearestLineStop(stops, selection.end);
+      }
+      if (inView(selIndex)) {
+        cursor = selIndex;
+      }
+    }
+    if (cursor === -1) {
+      navLog('cursor off-screen, resuming from viewport');
+      const visible = firstVisibleStopIndex(view, id, scrollTop, viewportHeight, stops);
+      if (visible === -1) {
         return;
       }
-      navLog(direction > 0 ? 'j' : 'k', {
+      // Step "onto" the visible row rather than past it.
+      cursor = visible - direction;
+    }
+    navLog('resolve', {
+      cursor,
+      stop: stops[cursor],
+      sep: sepCursorRef.current,
+      sel: selection ? `${selection.end}:${selection.endSide ?? selection.side}` : null,
+      scrollTop,
+      viewportHeight,
+      stopCount: stops.length,
+    });
+
+    // ] / [ — jump to the start of the next / previous change block.
+    if (isBracket) {
+      const targetIndex = nextChangeIndex(stops, cursor, direction);
+      navLog(event.key, {
         from: cursor,
-        to: next,
-        stop: stops[next],
+        to: targetIndex,
       });
-      applyStop(next);
-    };
+      if (targetIndex !== -1) {
+        applyStop(targetIndex);
+      }
+      return;
+    }
+
+    // Shift+J/K — move the selection's END to the adjacent line stop
+    // (skipping bars) while the anchor stays put.
+    if (event.shiftKey) {
+      let endIndex = cursor;
+      do {
+        endIndex += direction;
+      } while (stops[endIndex] && stops[endIndex].kind !== 'line');
+      const endStop = stops[endIndex];
+      if (endStop?.kind !== 'line') {
+        return;
+      }
+      const anchor = anchorRef.current ?? {
+        line: endStop.line,
+        side: endStop.side,
+      };
+      anchorRef.current = anchor;
+      store.setSelectedLines({
+        start: anchor.line,
+        side: anchor.side,
+        end: endStop.line,
+        endSide: endStop.side,
+      });
+      scrollCursorTo(endStop);
+      return;
+    }
+
+    // Plain j/k — step to the adjacent stop. A bar that was expanded away
+    // (its element no longer renders) is skipped; bars adjacent to the
+    // in-viewport cursor are inside the render window, so a missing element
+    // means expanded, not unrendered.
+    const shadow = diffShadow(view);
+    let next = cursor + direction;
+    while (
+      stops[next] &&
+      stops[next].kind === 'gap' &&
+      shadow &&
+      findSeparator(shadow, (stops[next] as GapStop).expandIndex) == null
+    ) {
+      navLog('skipping expanded-away bar', {
+        expandIndex: (stops[next] as GapStop).expandIndex,
+      });
+      next += direction;
+    }
+    if (next < 0 || next >= stops.length) {
+      return;
+    }
+    navLog(direction > 0 ? 'j' : 'k', {
+      from: cursor,
+      to: next,
+      stop: stops[next],
+    });
+    applyStop(next);
+  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => onKeyDownRef.current(event);
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
@@ -914,37 +930,40 @@ export function DiffPane() {
 
   // Pointer-drag selection on the code area. The anchor is whatever line the
   // pointer is over at mousedown (tracked via onLineEnter); onLineEnter then
-  // extends to the line under the pointer while dragging.
+  // extends to the line under the pointer while dragging. Ref-trampolined for
+  // the same hot-swap reason as the keydown handler above.
+  const onPointerDownRef = useRef<(event: PointerEvent) => void>(() => {});
+  onPointerDownRef.current = (event: PointerEvent) => {
+    if (event.button !== 0) {
+      return;
+    }
+    const root = containerRef.current;
+    const hovered = hoveredLineRef.current;
+    if (!root || !hovered || !root.contains(event.target as Node)) {
+      return;
+    }
+    draggingRef.current = true;
+    const anchor = anchorRef.current;
+    if (event.shiftKey && anchor) {
+      // Shift+down extends from the existing anchor (and a shift-drag keeps it).
+      useReviewStore.getState().setSelectedLines({
+        start: anchor.line,
+        side: anchor.side,
+        end: hovered.line,
+        endSide: hovered.side,
+      });
+    } else {
+      anchorRef.current = hovered;
+      useReviewStore.getState().setSelectedLines({
+        start: hovered.line,
+        end: hovered.line,
+        side: hovered.side,
+        endSide: hovered.side,
+      });
+    }
+  };
   useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) {
-        return;
-      }
-      const root = containerRef.current;
-      const hovered = hoveredLineRef.current;
-      if (!root || !hovered || !root.contains(event.target as Node)) {
-        return;
-      }
-      draggingRef.current = true;
-      const anchor = anchorRef.current;
-      if (event.shiftKey && anchor) {
-        // Shift+down extends from the existing anchor (and a shift-drag keeps it).
-        useReviewStore.getState().setSelectedLines({
-          start: anchor.line,
-          side: anchor.side,
-          end: hovered.line,
-          endSide: hovered.side,
-        });
-      } else {
-        anchorRef.current = hovered;
-        useReviewStore.getState().setSelectedLines({
-          start: hovered.line,
-          end: hovered.line,
-          side: hovered.side,
-          endSide: hovered.side,
-        });
-      }
-    };
+    const onPointerDown = (event: PointerEvent) => onPointerDownRef.current(event);
     const onPointerUp = () => {
       draggingRef.current = false;
     };
