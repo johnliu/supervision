@@ -175,6 +175,45 @@ export async function separators(page: Page): Promise<SeparatorInfo[]> {
   });
 }
 
+/** Step j (or k) until the bar cursor appears; returns the bar's expand index. */
+export async function walkOntoBar(page: Page, key: 'j' | 'k' = 'j', maxSteps = 40): Promise<number> {
+  for (let i = 0; i < maxSteps; i++) {
+    await nav(page, key);
+    const bar = await barCursor(page);
+    if (bar !== null) {
+      return bar;
+    }
+  }
+  throw new Error('walkOntoBar: never reached a bar');
+}
+
+/** Click a directional expand button on a (chunked) bar. Split view renders
+ * two separator copies per index (gutter + content); click the visible one. */
+export async function clickExpandButton(
+  page: Page,
+  expandIndex: number,
+  dir: 'up' | 'down' | 'both' | 'all',
+): Promise<void> {
+  const attr = dir === 'all' ? 'data-expand-all-button' : `data-expand-${dir}`;
+  // dispatchEvent instead of a pointer click: the separator element is
+  // recycled by virtualization on every render pass, so Playwright's
+  // actionability checks never see it stable. The dispatched click takes the
+  // same listener path (lib expand + the capture-phase nav-model mirror);
+  // trusted-pointer coverage comes from the pill tests.
+  const buttons = page.locator(`[data-separator][data-expand-index="${expandIndex}"] [${attr}]`);
+  const count = await buttons.count();
+  for (let i = 0; i < count; i++) {
+    const button = buttons.nth(i);
+    if (await button.isVisible()) {
+      await button.dispatchEvent('click');
+      await settle(page);
+      await settle(page);
+      return;
+    }
+  }
+  throw new Error(`clickExpandButton: no visible ${attr} on bar ${expandIndex}`);
+}
+
 /** Click a bar's "N unmodified lines" pill (the lib's expand trigger). */
 export async function clickExpandPill(
   page: Page,

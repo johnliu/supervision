@@ -14,7 +14,8 @@
     "test:unit": "bun test src",
     "test:e2e": "playwright test",
     "test:e2e:webkit": "playwright test --project=webkit",
-    "test": "bun run typecheck && bun run test:unit && bun run test:e2e",
+    "test": "bun run typecheck && bun run test:unit && bun run check:specs && bun run test:e2e",
+    "check:specs": "bun scripts/check-spec-coverage.ts",
     "playwright:install": "playwright install webkit chromium"
   },
   "dependencies": {

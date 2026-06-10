@@ -2,6 +2,29 @@
 
 A fast Electrobun desktop app template with React, Tailwind CSS, and Vite for hot module replacement (HMR).
 
+## Testing & web mode
+
+The diff pane's behavior is specified in [docs/specs/](docs/specs/) — every
+spec item maps to a test, and every bug fix starts with a failing spec-tagged
+test (see [docs/specs/README.md](docs/specs/README.md) for the workflow).
+
+```bash
+# One-time: Playwright browsers
+devbox run -- bun run playwright:install
+
+devbox run -- bun run test:unit         # pure nav-model tests (bun test, ~100ms)
+devbox run -- bun run test:e2e          # Playwright vs the real app in web mode (webkit + chromium)
+devbox run -- bun run test:e2e:webkit   # webkit only — the engine family WKWebView ships
+devbox run -- bun run test              # full gate: typecheck + unit + spec coverage + e2e
+
+# Manual web mode: the real app in a browser on deterministic fixtures
+devbox run -- bun run dev:web           # opens /web.html; ?fixture=gaps-large&style=unified etc.
+```
+
+Web mode (`src/mainview/web/`) renders the full app through the platform seam
+(`src/mainview/platform.ts`) against an in-memory backend — no Electrobun.
+Nothing web-mode ships in the packaged app.
+
 ## Getting Started
 
 ```bash
