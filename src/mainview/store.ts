@@ -5,7 +5,7 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { create } from 'zustand';
 import type { AnnotationSide, Comment, CompareSpec, FileChange, ReviewModel, SetRepoResult } from '../shared/types';
-import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './rpc';
+import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './platform';
 
 export type DiffStyle = 'split' | 'unified';
 
