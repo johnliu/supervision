@@ -3,12 +3,27 @@
 // shift-click extend the selection; j/k move the single-line cursor and ] / [
 // jump between changes. A "+" appears in the gutter to open an inline comment
 // composer. Existing comments render inline as annotations at their end line.
+//
+// Keyboard navigation works on a precomputed stop list derived from the SAME
+// parsed diff the renderer draws (see diffNav.ts) — the DOM is only consulted
+// to ask "what's visible?" and to scroll. parseDiffFromFile is called once here
+// and handed to <FileDiff>, so the model and the pixels can't disagree.
 
-import { type DiffLineAnnotation, MultiFileDiff, Virtualizer } from '@pierre/diffs/react';
+import { parseDiffFromFile } from '@pierre/diffs';
+import { type DiffLineAnnotation, FileDiff, Virtualizer } from '@pierre/diffs/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { AnnotationSide, FileChange } from '../../shared/types';
+import type { AnnotationSide } from '../../shared/types';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
+import {
+  buildNavStops,
+  countLines,
+  gapStopIndex,
+  type NavStop,
+  nearestLineStop,
+  nextChangeIndex,
+  stopIndexForSelection,
+} from './diffNav';
 import { Button } from './ui/button';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
@@ -36,41 +51,43 @@ function navLog(label: string, detail?: Record<string, unknown>): void {
   }
 }
 
-// Find the additions-side cell for `line` in the diff's open shadow DOM (falls
-// back to either side / light DOM). Used to scroll the j/k cursor into view.
-function findLineCell(root: HTMLElement, line: number): HTMLElement | null {
-  const selector = `[data-column-number="${line}"]`;
+// The diff renders into an open shadow root; find the one holding the rows.
+function diffShadowRoot(root: HTMLElement): ShadowRoot | null {
   for (const node of root.querySelectorAll('*')) {
     const shadow = node.shadowRoot;
-    if (!shadow) {
-      continue;
-    }
-    const cell =
-      shadow.querySelector<HTMLElement>(`[data-additions] ${selector}`) ?? shadow.querySelector<HTMLElement>(selector);
-    if (cell) {
-      return cell;
-    }
-  }
-  return root.querySelector<HTMLElement>(selector);
-}
-
-// First additions-side line number currently rendered (≈ top of the viewport),
-// used as the starting cursor when nothing is selected yet.
-function firstRenderedLine(root: HTMLElement): number | null {
-  for (const node of root.querySelectorAll('*')) {
-    const shadow = node.shadowRoot;
-    if (!shadow) {
-      continue;
-    }
-    // Prefer the additions column (split); fall back to any column (unified).
-    const cell =
-      shadow.querySelector<HTMLElement>('[data-additions] [data-column-number]') ??
-      shadow.querySelector<HTMLElement>('[data-column-number]');
-    if (cell?.dataset.columnNumber) {
-      return Number(cell.dataset.columnNumber);
+    if (shadow?.querySelector('[data-line], [data-separator]')) {
+      return shadow;
     }
   }
   return null;
+}
+
+// The rendered cell for a given file line on a given side. Scoped to the right
+// column in split (and disambiguated by line type in unified) so old-file line N
+// and new-file line N don't collide.
+function findCursorCell(shadow: ShadowRoot, line: number, side: AnnotationSide): HTMLElement | null {
+  const scope =
+    side === 'deletions'
+      ? (shadow.querySelector('[data-deletions]') ?? shadow)
+      : (shadow.querySelector('[data-additions]') ?? shadow);
+  for (const cell of scope.querySelectorAll<HTMLElement>(`[data-line="${line}"]`)) {
+    const type = cell.getAttribute('data-line-type') ?? '';
+    const isDel = type === 'change-deletion' || cell.closest('[data-deletions]') != null;
+    if ((side === 'deletions') === isDel) {
+      return cell;
+    }
+  }
+  return null;
+}
+
+// A collapsed-context bar's rendered element (null once fully expanded away).
+function findSeparator(shadow: ShadowRoot, expandIndex: number): HTMLElement | null {
+  return shadow.querySelector<HTMLElement>(`[data-separator][data-expand-index="${expandIndex}"]`);
+}
+
+// The rendered element a stop corresponds to, if it is currently rendered.
+function stopElement(shadow: ShadowRoot, stop: NavStop): HTMLElement | null {
+  return stop.kind === 'gap' ? findSeparator(shadow, stop.expandIndex) : findCursorCell(shadow, stop.line, stop.side);
 }
 
 // Scroll the diff's vertical scroller to reveal `el`, WITHOUT touching the
@@ -92,188 +109,82 @@ function scrollRowIntoView(root: HTMLElement, el: HTMLElement): void {
   } else if (elRect.bottom > viewRect.bottom - margin) {
     scroller.scrollTop += elRect.bottom - viewRect.bottom + margin;
   }
-  navLog('scrollRowIntoView', {
-    elTop: Math.round(elRect.top),
-    elBottom: Math.round(elRect.bottom),
-    viewTop: Math.round(viewRect.top),
-    viewBottom: Math.round(viewRect.bottom),
-    scrollTopBefore: Math.round(before),
-    scrollTopAfter: Math.round(scroller.scrollTop),
-    moved: Math.round(scroller.scrollTop - before),
-  });
-}
-
-// Scroll a cursor line into view; if it isn't rendered (collapsed/virtualized),
-// nudge the viewport in the move direction so it scrolls toward it.
-function scrollLineIntoView(root: HTMLElement, line: number, direction: number): void {
-  const cell = findLineCell(root, line);
-  if (cell) {
-    scrollRowIntoView(root, cell);
-  } else {
-    root.querySelector<HTMLElement>('.overflow-auto')?.scrollBy({
-      top: direction * 90,
-      behavior: 'smooth',
+  if (scroller.scrollTop !== before) {
+    navLog('scroll', {
+      moved: Math.round(scroller.scrollTop - before),
+      scrollTop: Math.round(scroller.scrollTop),
     });
   }
 }
 
-// The diff renders into an open shadow root; find the one holding the rows.
-function diffShadowRoot(root: HTMLElement): ShadowRoot | null {
-  for (const node of root.querySelectorAll('*')) {
-    const shadow = node.shadowRoot;
-    if (shadow?.querySelector('[data-column-number], [data-separator]')) {
-      return shadow;
+// Scroll `getEl()` into view now and re-assert it for a few frames. The diff
+// lib can scroll asynchronously after a state change (scroll restoration on
+// re-render, occasionally to the wrong place); since scrollRowIntoView is a
+// no-op when the row is already in view, the hold only ever corrects drift.
+function holdRowInView(root: HTMLElement, getEl: () => HTMLElement | null): void {
+  let frames = 0;
+  const assert = () => {
+    const el = getEl();
+    if (el) {
+      scrollRowIntoView(root, el);
     }
-  }
-  return null;
-}
-
-// One navigable stop: a code line or a collapsed-context bar. A visual row is
-// identified by BOTH its new-side (addLine) and old-side (delLine) file lines —
-// a context/modified row has both — so the keyboard cursor can be re-located no
-// matter which side a selection or click came from. (Identifying a row by a
-// single file line number is ambiguous: new-file line N and old-file line N are
-// different rows, which made the cursor jump to the top of the file.)
-interface VisualRow {
-  /** Element to scroll into view (the additions cell when present). */
-  el: HTMLElement;
-  /** New-file line number, if this row has an additions/context cell. */
-  addLine: number | null;
-  /** Old-file line number, if this row has a deletions/context cell. */
-  delLine: number | null;
-  /** expand-index when this row is a collapsed bar (then add/delLine are null). */
-  sep: string | null;
-}
-
-interface RowAcc {
-  top: number;
-  addEl: HTMLElement | null;
-  delEl: HTMLElement | null;
-  addLine: number | null;
-  delLine: number | null;
-  sepEl: HTMLElement | null;
-  sep: string | null;
-}
-
-// Navigable stops in true on-screen order: every rendered code line plus the
-// collapsed bars, ordered by vertical position so j/k step exactly what the eye
-// sees. Split renders two columns (additions / deletions) and unified one;
-// keying by rounded top collapses a split row's two cells into one stop while
-// recording both file-line numbers.
-function visualRows(shadow: ShadowRoot): VisualRow[] {
-  const byTop = new Map<number, RowAcc>();
-  const at = (top: number): RowAcc => {
-    let acc = byTop.get(top);
-    if (!acc) {
-      acc = {
-        top,
-        addEl: null,
-        delEl: null,
-        addLine: null,
-        delLine: null,
-        sepEl: null,
-        sep: null,
-      };
-      byTop.set(top, acc);
+    frames++;
+    if (frames < 4) {
+      requestAnimationFrame(assert);
     }
-    return acc;
   };
+  assert();
+}
 
-  for (const el of shadow.querySelectorAll<HTMLElement>('[data-line]')) {
-    const lineAttr = el.getAttribute('data-line');
-    const type = el.getAttribute('data-line-type') ?? '';
-    if (lineAttr == null || !(type.startsWith('change') || type.startsWith('context'))) {
+// Whether a stop's rendered element overlaps the scroller's viewport.
+function stopInViewport(root: HTMLElement, shadow: ShadowRoot, stop: NavStop): boolean {
+  const el = stopElement(shadow, stop);
+  if (!el) {
+    return false;
+  }
+  const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
+  if (!view) {
+    return true;
+  }
+  const rect = el.getBoundingClientRect();
+  return rect.bottom > view.top && rect.top < view.bottom;
+}
+
+// The stop whose rendered cell sits nearest the top of the viewport — where
+// navigation resumes when the cursor is lost or was scrolled away. (With
+// virtualization, "what is on screen" is genuinely a DOM question.)
+function firstVisibleStopIndex(root: HTMLElement, shadow: ShadowRoot, stops: NavStop[]): number {
+  const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
+  if (!view) {
+    return stops.length > 0 ? 0 : -1;
+  }
+  let bestTop = Number.POSITIVE_INFINITY;
+  let best: {
+    line: number;
+    side: AnnotationSide;
+  } | null = null;
+  for (const cell of shadow.querySelectorAll<HTMLElement>('[data-line]')) {
+    const rect = cell.getBoundingClientRect();
+    if (rect.bottom <= view.top || rect.top >= view.bottom || rect.top >= bestTop) {
       continue;
     }
-    const acc = at(Math.round(el.getBoundingClientRect().top));
-    if (type === 'change-deletion' || el.closest('[data-deletions]')) {
-      acc.delLine ??= Number(lineAttr);
-      acc.delEl ??= el;
-    } else {
-      acc.addLine ??= Number(lineAttr);
-      acc.addEl ??= el;
+    const line = Number(cell.getAttribute('data-line'));
+    if (!Number.isFinite(line)) {
+      continue;
     }
-  }
-
-  for (const el of shadow.querySelectorAll<HTMLElement>('[data-separator][data-expand-index]')) {
-    const acc = at(Math.round(el.getBoundingClientRect().top));
-    if (acc.addEl == null && acc.delEl == null) {
-      acc.sepEl ??= el;
-      acc.sep ??= el.getAttribute('data-expand-index');
-    }
-  }
-
-  return Array.from(byTop.values())
-    .sort((a, b) => a.top - b.top)
-    .map((acc) => ({
-      el: (acc.addEl ?? acc.delEl ?? acc.sepEl) as HTMLElement,
-      addLine: acc.addLine,
-      delLine: acc.delLine,
-      sep: acc.sep,
-    }));
-}
-
-// Whether `row` is the one the cursor (a selection on `end`/`endSide`) sits on,
-// matched against the matching side's file line.
-function rowHoldsCursor(row: VisualRow, end: number, endSide: AnnotationSide): boolean {
-  return row.sep == null && (endSide === 'deletions' ? row.delLine === end : row.addLine === end);
-}
-
-// The rendered cell for a given file line on a given side. Scoped to the right
-// column in split (and disambiguated by line type in unified) so old-file line N
-// and new-file line N don't collide.
-function findCursorCell(shadow: ShadowRoot, line: number, side: AnnotationSide): HTMLElement | null {
-  const scope =
-    side === 'deletions'
-      ? (shadow.querySelector('[data-deletions]') ?? shadow)
-      : (shadow.querySelector('[data-additions]') ?? shadow);
-  for (const cell of scope.querySelectorAll<HTMLElement>(`[data-line="${line}"]`)) {
     const type = cell.getAttribute('data-line-type') ?? '';
     const isDel = type === 'change-deletion' || cell.closest('[data-deletions]') != null;
-    if ((side === 'deletions') === isDel) {
-      return cell;
-    }
+    bestTop = rect.top;
+    best = {
+      line,
+      side: isDel ? 'deletions' : 'additions',
+    };
   }
-  return null;
-}
-
-// Whether a line cell belongs to a change (addition/deletion) vs context. The
-// `data-line-type` attribute lives on the row's cells; check the cell, its
-// nearest ancestor with the attribute, then any sibling cell in the same row.
-function isChangeCell(cell: HTMLElement): boolean {
-  const direct = cell.getAttribute('data-line-type');
-  if (direct) {
-    return direct.startsWith('change');
+  if (!best) {
+    return -1;
   }
-  const near = cell.closest('[data-line-type]') ?? cell.parentElement?.querySelector('[data-line-type]') ?? null;
-  return (near?.getAttribute('data-line-type') ?? '').startsWith('change');
-}
-
-// New-side line numbers that begin each change block ("hunk"), top-to-bottom.
-// A block is a contiguous run of change lines; a context line or a collapsed
-// separator ends it. Used by ] / [ to jump between changes. DOM-based, so it
-// covers the rendered hunks (changed lines are always rendered; only unchanged
-// context collapses).
-function changeBlockStarts(shadow: ShadowRoot): number[] {
-  const scope = shadow.querySelector('[data-additions]') ?? shadow;
-  const stops = Array.from(scope.querySelectorAll<HTMLElement>('[data-column-number], [data-separator]'));
-  const starts: number[] = [];
-  let prevWasChange = false;
-  for (const el of stops) {
-    if (el.hasAttribute('data-separator')) {
-      prevWasChange = false;
-      continue;
-    }
-    const isChange = isChangeCell(el);
-    if (isChange && !prevWasChange) {
-      const line = Number(el.getAttribute('data-column-number'));
-      if (Number.isFinite(line)) {
-        starts.push(line);
-      }
-    }
-    prevWasChange = isChange;
-  }
-  return starts;
+  const exact = stopIndexForSelection(stops, best.line, best.side);
+  return exact !== -1 ? exact : nearestLineStop(stops, best.line);
 }
 
 // Highlight every separator element for one collapsed region (split view renders
@@ -313,7 +224,6 @@ export function DiffPane() {
   const working = useReviewStore((state) => state.compare.kind === 'working');
   const [side, setSide] = useState<'new' | 'approved'>('new');
   const containerRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<FileChange | null>(null);
   // Fixed end of the selection (set on click / cursor move); shift-click and
   // Shift+J/K extend from here.
   const anchorRef = useRef<{
@@ -349,7 +259,6 @@ export function DiffPane() {
   const hasBoth = unstagedEntry !== null && stagedEntry !== null;
   const effectiveSide = side === 'approved' && stagedEntry ? 'approved' : 'new';
   const file = effectiveSide === 'approved' ? stagedEntry : (unstagedEntry ?? stagedEntry);
-  fileRef.current = file;
 
   const fileComments = useMemo(
     () => comments.filter((comment) => comment.path === file?.path),
@@ -359,11 +268,59 @@ export function DiffPane() {
     ],
   );
 
+  // Parse the diff ONCE — the renderer (<FileDiff>) and the keyboard model both
+  // consume this object, so they can never disagree about hunks or lines.
+  const oldName = file?.oldPath ?? file?.path ?? '';
+  const newName = file?.path ?? '';
+  const oldContents = file?.oldContents ?? '';
+  const newContents = file?.newContents ?? '';
+  const binary = file?.binary ?? false;
+  const fileDiff = useMemo(
+    () =>
+      !file || binary
+        ? null
+        : parseDiffFromFile(
+            {
+              name: oldName,
+              contents: oldContents,
+            },
+            {
+              name: newName,
+              contents: newContents,
+            },
+            {
+              ignoreWhitespace,
+            },
+          ),
+    [
+      file,
+      binary,
+      oldName,
+      newName,
+      oldContents,
+      newContents,
+      ignoreWhitespace,
+    ],
+  );
+
+  // The keyboard's stop list for the current view mode (see diffNav.ts), kept
+  // in a ref so the []-deps keydown listener always reads the current one.
+  const navStops = useMemo(
+    () => (fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents)) : []),
+    [
+      fileDiff,
+      diffStyle,
+      newContents,
+    ],
+  );
+  const navStopsRef = useRef<NavStop[]>([]);
+  navStopsRef.current = navStops;
+
   // Keyboard navigation in the diff:
-  //   j/k        move a single-line cursor; collapsed "N unmodified lines" bars
+  //   j/k        move the cursor one stop; collapsed "N unmodified lines" bars
   //              are stops too (outlined), and Enter/Space expands them.
   //   Shift+J/K  grow/shrink the line selection from the anchor.
-  //   ] / [      jump to the next / previous change, skipping context.
+  //   ] / [      jump to the next / previous change block, skipping context.
   // (event.code is layout- and shift-independent, so Shift+J still reports KeyJ.)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -375,16 +332,19 @@ export function DiffPane() {
         return;
       }
       const root = containerRef.current;
-      const currentFile = fileRef.current;
-      if (!root || !currentFile) {
+      const stops = navStopsRef.current;
+      if (!root || stops.length === 0) {
         return;
       }
       const shadow = diffShadowRoot(root);
+      if (!shadow) {
+        return;
+      }
       const store = useReviewStore.getState();
 
       // Enter / Space expands the collapsed bar the cursor is on.
-      if ((event.key === 'Enter' || event.code === 'Space') && sepCursorRef.current != null && shadow) {
-        const sep = shadow.querySelector<HTMLElement>(`[data-separator][data-expand-index="${sepCursorRef.current}"]`);
+      if ((event.key === 'Enter' || event.code === 'Space') && sepCursorRef.current != null) {
+        const sep = findSeparator(shadow, Number(sepCursorRef.current));
         const button =
           sep?.querySelector<HTMLElement>('[data-expand-down],[data-expand-both]') ??
           sep?.querySelector<HTMLElement>('[data-expand-button],[data-unmodified-lines]');
@@ -395,163 +355,127 @@ export function DiffPane() {
         return;
       }
 
-      // ] / [ — jump to the next / previous change ("hunk"), skipping context
-      // lines and collapsed bars. (File nav is Cmd+Shift+] / [ on the menu, so
-      // the bare brackets are free.)
-      if (event.key === ']' || event.key === '[') {
-        event.preventDefault();
-        const dir = event.key === ']' ? 1 : -1;
-        const starts = shadow ? changeBlockStarts(shadow) : [];
-        if (shadow && starts.length > 0) {
-          const cursor = store.selectedLines?.end ?? firstRenderedLine(root) ?? 0;
-          const target =
-            dir > 0
-              ? (starts.find((line) => line > cursor) ?? starts[0])
-              : (starts.filter((line) => line < cursor).at(-1) ?? starts[starts.length - 1]);
-          clearSeparatorCursor(shadow);
-          sepCursorRef.current = null;
-          anchorRef.current = {
-            line: target,
-            side: 'additions',
-          };
-          store.setSelectedLines({
-            start: target,
-            end: target,
-            side: 'additions',
-            endSide: 'additions',
-          });
-          scrollLineIntoView(root, target, dir);
-        }
-        return;
-      }
-
-      if (event.code !== 'KeyJ' && event.code !== 'KeyK') {
+      const isBracket = event.key === ']' || event.key === '[';
+      const isJK = event.code === 'KeyJ' || event.code === 'KeyK';
+      if (!isBracket && !isJK) {
         return;
       }
       event.preventDefault();
-      const direction = event.code === 'KeyJ' ? 1 : -1;
-      const maxLine = Math.max(1, currentFile.newContents.split('\n').length);
-      const selection = store.selectedLines;
+      const direction: 1 | -1 = event.key === ']' || event.code === 'KeyJ' ? 1 : -1;
 
-      // Shift+J/K: grow/shrink the line selection from the anchor.
-      if (event.shiftKey) {
-        const start = selection?.start ?? firstRenderedLine(root) ?? 1;
-        const side = selection?.side ?? 'additions';
-        const end = selection ? Math.min(maxLine, Math.max(1, selection.end + direction)) : start;
-        anchorRef.current = {
-          line: start,
-          side,
-        };
-        store.setSelectedLines({
-          start,
-          side,
-          end,
-          endSide: side,
-        });
-        scrollLineIntoView(root, end, direction);
-        return;
-      }
-
-      // Plain j/k: step through visual rows (code lines + collapsed bars) in
-      // on-screen order, selecting each on its own side so the cursor tracks
-      // what's visible — no jumping over deletion rows, and correct in unified.
-      const rows = shadow ? visualRows(shadow) : [];
-      if (rows.length === 0) {
-        const line = Math.max(1, Math.min(maxLine, (selection?.end ?? firstRenderedLine(root) ?? 1) + direction));
-        store.setSelectedLines({
-          start: line,
-          end: line,
-          side: 'additions',
-          endSide: 'additions',
-        });
-        scrollLineIntoView(root, line, direction);
-        return;
-      }
-      // Locate the current cursor among the rows. Match against whichever side
-      // the selection is on — a context / modified row carries both file lines,
-      // so a deletions-side selection still resolves to its visual row instead
-      // of falling through to a same-numbered row near the top.
-      let current = -1;
-      if (selection) {
-        const endSide = selection.endSide ?? selection.side ?? 'additions';
-        current = rows.findIndex((row) => rowHoldsCursor(row, selection.end, endSide));
-      } else if (sepCursorRef.current != null) {
-        current = rows.findIndex((row) => row.sep === sepCursorRef.current);
-      }
-      navLog(event.code === 'KeyJ' ? 'j (down)' : 'k (up)', {
-        rows: rows.length,
-        current,
-        foundVia: selection
-          ? `selection ${selection.end}/${selection.endSide ?? selection.side}`
-          : sepCursorRef.current != null
-            ? `sep ${sepCursorRef.current}`
-            : 'none',
-      });
-      // If the cursor row has been scrolled out of view (e.g. the user
-      // wheel-scrolled away), resume from the viewport rather than snapping back
-      // to the off-screen cursor.
-      if (current !== -1) {
-        const rect = rows[current].el.getBoundingClientRect();
-        const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
-        if (view && (rect.bottom <= view.top || rect.top >= view.bottom)) {
-          navLog('cursor off-screen → resume from viewport', {
-            cursorTop: Math.round(rect.top),
-            viewTop: Math.round(view.top),
-            viewBottom: Math.round(view.bottom),
-          });
-          current = -1;
-        }
-      }
-      if (current === -1) {
-        // Cursor not on a rendered row (e.g. clicked elsewhere): resume from the
-        // first row visible in the viewport — never the top of the file.
-        const viewportTop = root.querySelector('.overflow-auto')?.getBoundingClientRect().top ?? 0;
-        const firstVisible = rows.findIndex((row) => Math.round(row.el.getBoundingClientRect().top) >= viewportTop - 1);
-        navLog('resume from viewport', {
-          firstVisible,
-        });
-        if (firstVisible === -1) {
-          return;
-        }
-        current = firstVisible - direction; // so current + direction lands on it
-      }
-      const nextIndex = Math.min(rows.length - 1, Math.max(0, current + direction));
-      const next = rows[nextIndex];
-      navLog('→ target', {
-        fromIndex: current,
-        toIndex: nextIndex,
-        addLine: next.addLine,
-        delLine: next.delLine,
-        sep: next.sep,
-        clamped: nextIndex === current,
-      });
-      if (shadow) {
+      // Land the cursor on a stop: update selection / bar highlight + scroll.
+      // Landing on a bar deliberately does NOT touch the line selection — the
+      // selectedLines=null re-render made the diff lib mis-restore its scroll
+      // position (the observed jump). The bar highlight alone is the cursor;
+      // sepCursorRef takes precedence when resolving it below.
+      const applyStop = (index: number) => {
+        const stop = stops[index];
         clearSeparatorCursor(shadow);
-      }
-      if (next.sep != null && shadow) {
-        sepCursorRef.current = next.sep;
-        highlightSeparator(shadow, next.sep);
-        store.setSelectedLines(null);
-      } else {
-        // Select on the row's primary side: additions when it has a new-side
-        // cell, else deletions (a pure-deletion row).
-        const side: AnnotationSide = next.addLine != null ? 'additions' : 'deletions';
-        const line = next.addLine ?? next.delLine;
-        if (line != null) {
+        if (stop.kind === 'gap') {
+          sepCursorRef.current = String(stop.expandIndex);
+          highlightSeparator(shadow, sepCursorRef.current);
+        } else {
           sepCursorRef.current = null;
           anchorRef.current = {
-            line,
-            side,
+            line: stop.line,
+            side: stop.side,
           };
           store.setSelectedLines({
-            start: line,
-            end: line,
-            side,
-            endSide: side,
+            start: stop.line,
+            end: stop.line,
+            side: stop.side,
+            endSide: stop.side,
           });
         }
+        // Scroll now, and re-assert for a few frames: the lib can scroll
+        // asynchronously after our handler (scroll restoration on re-render);
+        // the hold is idempotent and vertical-only, so it only corrects drift.
+        holdRowInView(root, () => stopElement(shadow, stop));
+      };
+
+      // Where is the cursor? The highlighted bar when the cursor is on one
+      // (it outranks the still-present line selection), else the selection's
+      // end matched on its own side. If it's unknown or was scrolled out of
+      // view, resume from the first visible row instead of yanking the view.
+      const selection = store.selectedLines;
+      let cursor = -1;
+      if (sepCursorRef.current != null) {
+        cursor = gapStopIndex(stops, Number(sepCursorRef.current));
       }
-      scrollRowIntoView(root, next.el);
+      if (cursor === -1 && selection) {
+        const endSide = (selection.endSide ?? selection.side ?? 'additions') as AnnotationSide;
+        cursor = stopIndexForSelection(stops, selection.end, endSide);
+        if (cursor === -1) {
+          cursor = nearestLineStop(stops, selection.end);
+        }
+      }
+      if (cursor !== -1 && !stopInViewport(root, shadow, stops[cursor])) {
+        navLog('cursor off-screen, resuming from viewport');
+        cursor = -1;
+      }
+      if (cursor === -1) {
+        const visible = firstVisibleStopIndex(root, shadow, stops);
+        if (visible === -1) {
+          return;
+        }
+        // Step "onto" the visible row rather than past it.
+        cursor = visible - direction;
+      }
+
+      // ] / [ — jump to the start of the next / previous change block.
+      if (isBracket) {
+        const targetIndex = nextChangeIndex(stops, cursor, direction);
+        navLog(event.key, {
+          from: cursor,
+          to: targetIndex,
+        });
+        if (targetIndex !== -1) {
+          applyStop(targetIndex);
+        }
+        return;
+      }
+
+      // Shift+J/K — move the selection's END to the adjacent line stop
+      // (skipping bars) while the anchor stays put.
+      if (event.shiftKey) {
+        let endIndex = cursor;
+        do {
+          endIndex += direction;
+        } while (stops[endIndex] && stops[endIndex].kind !== 'line');
+        const endStop = stops[endIndex];
+        if (endStop?.kind !== 'line') {
+          return;
+        }
+        const anchor = anchorRef.current ?? {
+          line: endStop.line,
+          side: endStop.side,
+        };
+        anchorRef.current = anchor;
+        store.setSelectedLines({
+          start: anchor.line,
+          side: anchor.side,
+          end: endStop.line,
+          endSide: endStop.side,
+        });
+        holdRowInView(root, () => findCursorCell(shadow, endStop.line, endStop.side));
+        return;
+      }
+
+      // Plain j/k — step to the adjacent stop. A bar that was expanded away
+      // (its element no longer renders) is skipped.
+      let next = cursor + direction;
+      while (stops[next] && stops[next].kind === 'gap' && stopElement(shadow, stops[next]) == null) {
+        next += direction;
+      }
+      if (next < 0 || next >= stops.length) {
+        return;
+      }
+      navLog(direction > 0 ? 'j' : 'k', {
+        from: cursor,
+        to: next,
+        stop: stops[next],
+      });
+      applyStop(next);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -590,10 +514,7 @@ export function DiffPane() {
       return;
     }
     const endSide = selectedLines.endSide ?? selectedLines.side ?? 'additions';
-    const cell = findCursorCell(shadow, selectedLines.end, endSide);
-    if (cell) {
-      scrollRowIntoView(root, cell);
-    }
+    holdRowInView(root, () => findCursorCell(shadow, selectedLines.end, endSide));
   }, [
     selectedLines,
   ]);
@@ -724,27 +645,17 @@ export function DiffPane() {
           </Button>
         ) : null}
       </div>
-      {file.binary ? (
+      {file.binary || !fileDiff ? (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
           Binary file — diff not shown
         </div>
       ) : (
         <Virtualizer className="min-h-0 flex-1 overflow-auto bg-background select-none">
-          <MultiFileDiff<AnnotationMeta>
+          <FileDiff<AnnotationMeta>
             key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
-            oldFile={{
-              name: file.oldPath ?? file.path,
-              contents: file.oldContents,
-            }}
-            newFile={{
-              name: file.path,
-              contents: file.newContents,
-            }}
+            fileDiff={fileDiff}
             options={{
               diffStyle,
-              parseDiffOptions: {
-                ignoreWhitespace,
-              },
               theme: {
                 dark: 'pierre-dark',
                 light: 'pierre-light',
