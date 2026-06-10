@@ -100,6 +100,18 @@ const LAYOUT = {
   gap: 0,
 };
 
+// EXP-11: expansion state is remembered per file (and per staged/unstaged
+// side) for the app session. A content fingerprint invalidates an entry when
+// that file's diff changes (bar indices shift); app relaunch clears all.
+interface ExpansionCacheEntry {
+  fingerprint: string;
+  map: ExpansionMap;
+}
+const expansionCache = new Map<string, ExpansionCacheEntry>();
+// Renderer instances a cached map was already replayed into (expandHunk is
+// incremental; StrictMode double-runs mount effects on the same instance).
+const replayedRenderers = new WeakSet<object>();
+
 // Verbose j/k navigation + scroll logging, to debug cursor/scroll behavior in
 // the Developer Tools console (View ▸ Toggle Developer Tools). On by default;
 // silence with `window.__navDebug = false` from the console.
@@ -181,24 +193,10 @@ function stopBounds(
   };
 }
 
-// Whether a stop overlaps the viewport (logical scrollTop .. + height).
-function stopInViewport(
-  view: ViewInstance,
-  itemId: string,
-  scrollTop: number,
-  viewportHeight: number,
-  stop: NavStop,
-): boolean {
-  const bounds = stopBounds(view, itemId, stop);
-  if (!bounds) {
-    return false;
-  }
-  return bounds.bottom > scrollTop && bounds.top < scrollTop + viewportHeight;
-}
-
-// The first stop intersecting the viewport — where navigation resumes when
-// the cursor is unknown or was scrolled away. Stops are in visual order, so
-// binary-search the first one whose bottom edge clears the viewport top.
+// The first stop intersecting the viewport — where navigation begins when no
+// cursor exists yet (CUR-5: an existing cursor always wins, visible or not).
+// Stops are in visual order, so binary-search the first one whose bottom edge
+// clears the viewport top.
 function firstVisibleStopIndex(
   view: ViewInstance,
   itemId: string,
@@ -416,6 +414,18 @@ export function DiffPane() {
   rebuildNavStopsRef.current = (expanded: ExpansionMap) =>
     fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents), expanded) : [];
 
+  const filePath = file?.path ?? '';
+  // Item id doubles as the React key: a new file remounts the view, so each
+  // file opens scrolled to the top with no leftover layout state.
+  const itemId = file ? `${filePath}:${file.staged ? 'staged' : 'unstaged'}` : '';
+  const itemIdRef = useRef('');
+  itemIdRef.current = itemId;
+  // EXP-11: detects content changes (which shift bar indices and invalidate a
+  // cached expansion map) without resetting on unrelated-file refreshes.
+  const fingerprint = `${oldContents.length}:${newContents.length}:${file?.additions ?? 0}:${file?.deletions ?? 0}`;
+  const fingerprintRef = useRef('');
+  fingerprintRef.current = fingerprint;
+
   // Advance our expansion map the way the renderer advances its own — the
   // single bookkeeping point for BOTH expansion entry points (Enter on a bar,
   // and mouse clicks on a bar's pill/buttons). Count may be Infinity
@@ -438,26 +448,105 @@ export function DiffPane() {
     expandedHunksRef.current = nextExpanded;
     navStopsRef.current = rebuildNavStopsRef.current(nextExpanded);
     setExpandedHunks(nextExpanded);
+    // EXP-11: remember for the session, keyed by file+side.
+    expansionCache.set(itemIdRef.current, {
+      fingerprint: fingerprintRef.current,
+      map: nextExpanded,
+    });
+    // EXP-9: every expansion drops the bar cursor, so stepping continues from
+    // the line selection (the reading position) into the revealed lines.
+    sepCursorRef.current = null;
+    const shadow = diffShadow(viewRef.current?.getInstance());
+    if (shadow) {
+      clearSeparatorCursor(shadow);
+    }
   };
 
-  const filePath = file?.path ?? '';
-  // Item id doubles as the React key: a new file remounts the view, so each
-  // file opens scrolled to the top with no leftover layout state.
-  const itemId = file ? `${filePath}:${file.staged ? 'staged' : 'unstaged'}` : '';
-  const itemIdRef = useRef('');
-  itemIdRef.current = itemId;
-
-  // Per-file cursor + expansion state dies with the file.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: itemId is the reset trigger, not an input.
+  // Per-file cursor state dies with the file; the expansion map is restored
+  // from the session cache when the content fingerprint still matches (EXP-11).
   useEffect(() => {
     anchorRef.current = null;
     sepCursorRef.current = null;
     hoveredLineRef.current = null;
     scrollTopRef.current = 0;
     lastBgRef.current = null;
-    setExpandedHunks(new Map());
+    const cached = expansionCache.get(itemId);
+    setExpandedHunks(cached && cached.fingerprint === fingerprint ? cached.map : new Map());
   }, [
     itemId,
+    fingerprint,
+  ]);
+
+  // EXP-11, renderer side: the per-file CodeView remounts collapsed, so a
+  // restored expansion map must be replayed into the fresh renderer instance.
+  // Guarded per instance — StrictMode double-runs effects on the same mount,
+  // and expandHunk is incremental, so replaying twice would over-expand.
+  useEffect(() => {
+    const cached = expansionCache.get(itemId);
+    if (!cached || cached.fingerprint !== fingerprint || cached.map.size === 0) {
+      return;
+    }
+    let cancelled = false;
+    const started = performance.now();
+    const replay = () => {
+      if (cancelled) {
+        return;
+      }
+      const instance = renderedDiffInstance(viewRef.current?.getInstance());
+      if (!instance) {
+        requestAnimationFrame(replay);
+        return;
+      }
+      // Wait for the initial highlight render before replaying: an earlier
+      // expandHunk lands in the renderer's expansion map but its completion
+      // repaints the pre-expansion layout and further re-renders stay stale
+      // (observed empirically; a click a second later works fine). The
+      // highlighted flag is internal to the lib — fall back to a timeout so
+      // plain-text/no-highlight paths still replay.
+      const highlighted =
+        (
+          instance as unknown as {
+            hunksRenderer?: {
+              renderCache?: {
+                highlighted?: boolean;
+              };
+            };
+          }
+        ).hunksRenderer?.renderCache?.highlighted === true;
+      if (!highlighted && performance.now() - started < 2500) {
+        requestAnimationFrame(replay);
+        return;
+      }
+      if (replayedRenderers.has(instance)) {
+        return;
+      }
+      replayedRenderers.add(instance);
+      navLog('expansion replay', {
+        itemId,
+        highlighted,
+        entries: [
+          ...cached.map.entries(),
+        ].map(([index, region]) => ({
+          index,
+          ...region,
+        })),
+      });
+      for (const [index, region] of cached.map) {
+        if (region.fromStart > 0) {
+          instance.expandHunk(index, 'up', region.fromStart);
+        }
+        if (region.fromEnd > 0) {
+          instance.expandHunk(index, 'down', region.fromEnd);
+        }
+      }
+    };
+    replay();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    itemId,
+    fingerprint,
   ]);
 
   // A bar fully revealed by expansion is no longer a gap stop. Drop the bar
@@ -805,39 +894,31 @@ export function DiffPane() {
       scrollCursorTo(stop);
     };
 
-    // Where is the cursor? Try, in order, the highlighted bar (it outranks
-    // the still-present line selection) then the selection's end on its own
-    // side — but accept each only if it is actually on screen. A candidate
-    // scrolled out of view is skipped, so after expanding a bar that gets
-    // pushed off-screen, j/k resumes from the still-visible line selection
-    // (stepping straight into the freshly revealed lines) rather than the bar.
-    // If neither is visible, resume from the first row in the viewport.
+    // Where is the cursor? The highlighted bar (it outranks the still-present
+    // line selection), else the selection's end on its own side. Visibility is
+    // deliberately NOT consulted: j/k always steps from the cursor, and the
+    // scroll below brings the destination back into view — manual scrolling
+    // never relocates the cursor (CUR-5/SCR-5). Only when no cursor exists at
+    // all (fresh file) does navigation begin from the first visible stop.
     const selection = store.selectedLines;
-    const inView = (index: number) => index !== -1 && stopInViewport(view, id, scrollTop, viewportHeight, stops[index]);
     let cursor = -1;
     if (sepCursorRef.current != null) {
-      const barIndex = gapStopIndex(stops, Number(sepCursorRef.current));
-      if (inView(barIndex)) {
-        cursor = barIndex;
-      }
+      cursor = gapStopIndex(stops, Number(sepCursorRef.current));
     }
     if (cursor === -1 && selection) {
       const endSide = (selection.endSide ?? selection.side ?? 'additions') as AnnotationSide;
-      let selIndex = stopIndexForSelection(stops, selection.end, endSide);
-      if (selIndex === -1) {
+      cursor = stopIndexForSelection(stops, selection.end, endSide);
+      if (cursor === -1) {
         // Not a modeled row — a line still hidden behind a bar resolves to that
         // bar's gap stop; anything else falls back to the nearest stop.
-        selIndex = gapIndexForLine(stops, selection.end, endSide);
+        cursor = gapIndexForLine(stops, selection.end, endSide);
       }
-      if (selIndex === -1) {
-        selIndex = nearestLineStop(stops, selection.end);
-      }
-      if (inView(selIndex)) {
-        cursor = selIndex;
+      if (cursor === -1) {
+        cursor = nearestLineStop(stops, selection.end);
       }
     }
     if (cursor === -1) {
-      navLog('cursor off-screen, resuming from viewport');
+      navLog('no cursor, starting from viewport');
       const visible = firstVisibleStopIndex(view, id, scrollTop, viewportHeight, stops);
       if (visible === -1) {
         return;

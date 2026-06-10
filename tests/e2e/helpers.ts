@@ -121,13 +121,14 @@ export async function clearNavLogs(page: Page): Promise<void> {
   await page.evaluate(() => window.__test?.clearNavLogs());
 }
 
-/** The expand-index of the bar carrying the keyboard cursor, or null. */
+/** The expand-index of the bar carrying the keyboard cursor, or null.
+ * count() first — locator actions auto-wait, and "no bar" is a normal state. */
 export async function barCursor(page: Page): Promise<number | null> {
-  const attr = await page
-    .locator('[data-separator][data-nav-cursor]')
-    .first()
-    .getAttribute('data-expand-index')
-    .catch(() => null);
+  const bars = page.locator('[data-separator][data-nav-cursor]');
+  if ((await bars.count()) === 0) {
+    return null;
+  }
+  const attr = await bars.first().getAttribute('data-expand-index');
   return attr == null ? null : Number(attr);
 }
 
