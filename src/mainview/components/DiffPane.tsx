@@ -1,17 +1,38 @@
-// Renders the selected file's diff using @pierre/diffs. `diffStyle` switches
-// between unified and split. Clicking anywhere on a line selects it; drag /
-// shift-click extend the selection; j/k move the single-line cursor and ] / [
-// jump between changes. A "+" appears in the gutter to open an inline comment
-// composer. Existing comments render inline as annotations at their end line.
+// Renders the selected file's diff using @pierre/diffs' CodeView — the
+// library's "advanced" viewer that owns the scroll container, virtualization,
+// and scroll-target resolution. `diffStyle` switches between unified and
+// split. Clicking anywhere on a line selects it; drag / shift-click extend the
+// selection; j/k move the single-line cursor and ] / [ jump between changes.
+// A "+" appears in the gutter to open an inline comment composer. Existing
+// comments render inline as annotations at their end line.
 //
-// Keyboard navigation works on a precomputed stop list derived from the SAME
-// parsed diff the renderer draws (see diffNav.ts) — the DOM is only consulted
-// to ask "what's visible?" and to scroll. parseDiffFromFile is called once here
-// and handed to <FileDiff>, so the model and the pixels can't disagree.
+// Architecture: ONE controlled CodeView holding ONE diff item. The item id is
+// `path:staged`, and the React key remounts the view per file so every file
+// opens scrolled to the top. The diff is parsed once (parseDiffFromFile) and
+// shared with the keyboard model (diffNav.ts), so the renderer and the cursor
+// can't disagree about rows.
+//
+// Scrolling goes through CodeView.scrollTo({type:'line', align:'nearest'}),
+// which resolves the row's position from the LAYOUT MODEL (getLinePosition) —
+// it works for rows that virtualization hasn't rendered, resolves lines hidden
+// behind a collapsed bar to the bar itself, and keeps re-resolving the target
+// every frame until the scroll settles. That replaces the previous
+// implementation's DOM measurement + multi-frame "hold in view" loops, and it
+// never touches horizontal scroll. "Which stop is visible?" is also answered
+// from the model: logical scrollTop (onScroll) + viewport height +
+// getLinePosition. The DOM is touched only to paint the keyboard cursor on a
+// collapsed-context bar (and to check such a bar still renders).
 
 import { parseDiffFromFile } from '@pierre/diffs';
-import { type DiffLineAnnotation, FileDiff, type FileDiffProps, Virtualizer } from '@pierre/diffs/react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  CodeView,
+  type CodeViewDiffItem,
+  type CodeViewHandle,
+  type CodeViewProps,
+  type DiffLineAnnotation,
+  type SelectedLineRange,
+} from '@pierre/diffs/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AnnotationSide } from '../../shared/types';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
@@ -38,6 +59,35 @@ type AnnotationMeta =
       kind: 'draft';
     };
 
+type DiffViewOptions = NonNullable<CodeViewProps<AnnotationMeta>['options']>;
+type ViewHandle = CodeViewHandle<AnnotationMeta>;
+type ViewInstance = NonNullable<ReturnType<ViewHandle['getInstance']>>;
+type RenderedDiff = Extract<
+  ReturnType<ViewInstance['getRenderedItems']>[number],
+  {
+    type: 'diff';
+  }
+>;
+type DiffInstance = RenderedDiff['instance'];
+
+// Pixels kept between the cursor row and the viewport edge when scrolling.
+// Doubles as render-ahead: the row lands inside the virtualizer's window.
+const NAV_MARGIN = 40;
+
+const THEME = {
+  dark: 'pierre-dark',
+  light: 'pierre-light',
+} as const;
+
+// Zero out CodeView's outer padding/gap so a stop's scroll-space position is
+// exactly itemTop + getLinePosition().top (the visibility math below relies
+// on it; scrollTo adds layout padding internally).
+const LAYOUT = {
+  paddingTop: 0,
+  paddingBottom: 0,
+  gap: 0,
+};
+
 // Verbose j/k navigation + scroll logging, to debug cursor/scroll behavior in
 // the Developer Tools console (View ▸ Toggle Developer Tools). On by default;
 // silence with `window.__navDebug = false` from the console.
@@ -53,140 +103,125 @@ function navLog(label: string, detail?: Record<string, unknown>): void {
   }
 }
 
-// The diff renders into an open shadow root; find the one holding the rows.
-function diffShadowRoot(root: HTMLElement): ShadowRoot | null {
-  for (const node of root.querySelectorAll('*')) {
-    const shadow = node.shadowRoot;
-    if (shadow?.querySelector('[data-line], [data-separator]')) {
-      return shadow;
+// The single diff item's renderer instance, when it is mounted.
+function renderedDiffInstance(view: ViewInstance | undefined | null): DiffInstance | null {
+  for (const rendered of view?.getRenderedItems() ?? []) {
+    if (rendered.type === 'diff') {
+      return rendered.instance;
     }
   }
   return null;
 }
 
-// The rendered cell for a given file line on a given side. Scoped to the right
-// column in split (and disambiguated by line type in unified) so old-file line N
-// and new-file line N don't collide.
-function findCursorCell(shadow: ShadowRoot, line: number, side: AnnotationSide): HTMLElement | null {
-  const scope =
-    side === 'deletions'
-      ? (shadow.querySelector('[data-deletions]') ?? shadow)
-      : (shadow.querySelector('[data-additions]') ?? shadow);
-  for (const cell of scope.querySelectorAll<HTMLElement>(`[data-line="${line}"]`)) {
-    const type = cell.getAttribute('data-line-type') ?? '';
-    const isDel = type === 'change-deletion' || cell.closest('[data-deletions]') != null;
-    if ((side === 'deletions') === isDel) {
-      return cell;
+// The shadow root holding the rendered diff rows (separator highlight only).
+function diffShadow(view: ViewInstance | undefined | null): ShadowRoot | null {
+  for (const rendered of view?.getRenderedItems() ?? []) {
+    if (rendered.element.shadowRoot) {
+      return rendered.element.shadowRoot;
     }
   }
   return null;
 }
 
-// A collapsed-context bar's rendered element (null once fully expanded away).
-function findSeparator(shadow: ShadowRoot, expandIndex: number): HTMLElement | null {
-  return shadow.querySelector<HTMLElement>(`[data-separator][data-expand-index="${expandIndex}"]`);
+// The line number + side whose layout position stands in for a stop. For a
+// gap stop that's its first hidden line: getLinePosition resolves hidden
+// lines to the separator row itself. (After a partial expansion the first
+// line may be revealed; it then sits at the top edge of the bar's region,
+// which is still the right neighborhood for scrolling and visibility.)
+function stopAnchor(stop: NavStop): {
+  line: number;
+  side: AnnotationSide;
+} {
+  return stop.kind === 'gap'
+    ? {
+        line: stop.addStart,
+        side: 'additions',
+      }
+    : {
+        line: stop.line,
+        side: stop.side,
+      };
 }
 
-// The rendered element a stop corresponds to, if it is currently rendered.
-function stopElement(shadow: ShadowRoot, stop: NavStop): HTMLElement | null {
-  return stop.kind === 'gap' ? findSeparator(shadow, stop.expandIndex) : findCursorCell(shadow, stop.line, stop.side);
-}
-
-// Scroll the diff's vertical scroller to reveal `el`, WITHOUT touching the
-// horizontal scroll position — so indentation/tabs the user scrolled to stay
-// put. The margin keeps a little context past the edge, which also keeps the
-// virtualizer rendering ahead so up/down navigation doesn't stick at the window
-// edge (e.g. when scrolling up from the bottom of a long file).
-function scrollRowIntoView(root: HTMLElement, el: HTMLElement): void {
-  const scroller = root.querySelector<HTMLElement>('.overflow-auto');
-  if (!scroller) {
-    return;
+// A stop's vertical bounds in scroll-space, from the layout model — defined
+// whether or not virtualization currently renders the row.
+function stopBounds(
+  view: ViewInstance,
+  itemId: string,
+  stop: NavStop,
+): {
+  top: number;
+  bottom: number;
+} | null {
+  const instance = renderedDiffInstance(view);
+  const itemTop = view.getTopForItem(itemId);
+  if (!instance || itemTop == null) {
+    return null;
   }
-  const elRect = el.getBoundingClientRect();
-  const viewRect = scroller.getBoundingClientRect();
-  const margin = 40;
-  const before = scroller.scrollTop;
-  if (elRect.top < viewRect.top + margin) {
-    scroller.scrollTop -= viewRect.top + margin - elRect.top;
-  } else if (elRect.bottom > viewRect.bottom - margin) {
-    scroller.scrollTop += elRect.bottom - viewRect.bottom + margin;
+  const anchor = stopAnchor(stop);
+  const position = instance.getLinePosition(anchor.line, anchor.side);
+  if (!position) {
+    return null;
   }
-  if (scroller.scrollTop !== before) {
-    navLog('scroll', {
-      moved: Math.round(scroller.scrollTop - before),
-      scrollTop: Math.round(scroller.scrollTop),
-    });
-  }
-}
-
-// Scroll `getEl()` into view now and re-assert it for a few frames. The diff
-// lib can scroll asynchronously after a state change (scroll restoration on
-// re-render, occasionally to the wrong place); since scrollRowIntoView is a
-// no-op when the row is already in view, the hold only ever corrects drift.
-function holdRowInView(root: HTMLElement, getEl: () => HTMLElement | null): void {
-  let frames = 0;
-  const assert = () => {
-    const el = getEl();
-    if (el) {
-      scrollRowIntoView(root, el);
-    }
-    frames++;
-    if (frames < 4) {
-      requestAnimationFrame(assert);
-    }
+  return {
+    top: itemTop + position.top,
+    bottom: itemTop + position.top + position.height,
   };
-  assert();
 }
 
-// Whether a stop's rendered element overlaps the scroller's viewport.
-function stopInViewport(root: HTMLElement, shadow: ShadowRoot, stop: NavStop): boolean {
-  const el = stopElement(shadow, stop);
-  if (!el) {
+// Whether a stop overlaps the viewport (logical scrollTop .. + height).
+function stopInViewport(
+  view: ViewInstance,
+  itemId: string,
+  scrollTop: number,
+  viewportHeight: number,
+  stop: NavStop,
+): boolean {
+  const bounds = stopBounds(view, itemId, stop);
+  if (!bounds) {
     return false;
   }
-  const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
-  if (!view) {
-    return true;
-  }
-  const rect = el.getBoundingClientRect();
-  return rect.bottom > view.top && rect.top < view.bottom;
+  return bounds.bottom > scrollTop && bounds.top < scrollTop + viewportHeight;
 }
 
-// The stop whose rendered cell sits nearest the top of the viewport — where
-// navigation resumes when the cursor is lost or was scrolled away. (With
-// virtualization, "what is on screen" is genuinely a DOM question.)
-function firstVisibleStopIndex(root: HTMLElement, shadow: ShadowRoot, stops: NavStop[]): number {
-  const view = root.querySelector('.overflow-auto')?.getBoundingClientRect();
-  if (!view) {
-    return stops.length > 0 ? 0 : -1;
-  }
-  let bestTop = Number.POSITIVE_INFINITY;
-  let best: {
-    line: number;
-    side: AnnotationSide;
-  } | null = null;
-  for (const cell of shadow.querySelectorAll<HTMLElement>('[data-line]')) {
-    const rect = cell.getBoundingClientRect();
-    if (rect.bottom <= view.top || rect.top >= view.bottom || rect.top >= bestTop) {
-      continue;
+// The first stop intersecting the viewport — where navigation resumes when
+// the cursor is unknown or was scrolled away. Stops are in visual order, so
+// binary-search the first one whose bottom edge clears the viewport top.
+function firstVisibleStopIndex(
+  view: ViewInstance,
+  itemId: string,
+  scrollTop: number,
+  viewportHeight: number,
+  stops: NavStop[],
+): number {
+  let low = 0;
+  let high = stops.length - 1;
+  let first = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const bounds = stopBounds(view, itemId, stops[mid]);
+    if (!bounds) {
+      return -1;
     }
-    const line = Number(cell.getAttribute('data-line'));
-    if (!Number.isFinite(line)) {
-      continue;
+    if (bounds.bottom > scrollTop) {
+      first = mid;
+      high = mid - 1;
+    } else {
+      low = mid + 1;
     }
-    const type = cell.getAttribute('data-line-type') ?? '';
-    const isDel = type === 'change-deletion' || cell.closest('[data-deletions]') != null;
-    bestTop = rect.top;
-    best = {
-      line,
-      side: isDel ? 'deletions' : 'additions',
-    };
   }
-  if (!best) {
+  if (first === -1) {
     return -1;
   }
-  const exact = stopIndexForSelection(stops, best.line, best.side);
-  return exact !== -1 ? exact : nearestLineStop(stops, best.line);
+  const bounds = stopBounds(view, itemId, stops[first]);
+  return bounds && bounds.top < scrollTop + viewportHeight ? first : -1;
+}
+
+// A collapsed-context bar's rendered element (null once expanded away — or
+// when virtualization hasn't rendered it; callers only probe bars adjacent
+// to the in-viewport cursor, which the render window covers).
+function findSeparator(shadow: ShadowRoot, expandIndex: number): HTMLElement | null {
+  return shadow.querySelector<HTMLElement>(`[data-separator][data-expand-index="${expandIndex}"]`);
 }
 
 // The separator's own box never reaches the screen: its inner pill
@@ -246,6 +281,12 @@ export function DiffPane() {
   const working = useReviewStore((state) => state.compare.kind === 'working');
   const [side, setSide] = useState<'new' | 'approved'>('new');
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<ViewHandle>(null);
+  // The scroll container CodeView renders (clientHeight = viewport height).
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // Logical scrollTop, fed by CodeView's onScroll (it differs from the DOM
+  // scrollTop once the view rebases very tall content).
+  const scrollTopRef = useRef(0);
   // Fixed end of the selection (set on click / cursor move); shift-click and
   // Shift+J/K extend from here.
   const anchorRef = useRef<{
@@ -290,8 +331,8 @@ export function DiffPane() {
     ],
   );
 
-  // Parse the diff ONCE — the renderer (<FileDiff>) and the keyboard model both
-  // consume this object, so they can never disagree about hunks or lines.
+  // Parse the diff ONCE — the renderer (CodeView item) and the keyboard model
+  // both consume this object, so they can never disagree about hunks or lines.
   const oldName = file?.oldPath ?? file?.path ?? '';
   const newName = file?.path ?? '';
   const oldContents = file?.oldContents ?? '';
@@ -339,12 +380,23 @@ export function DiffPane() {
   const navStopsRef = useRef<NavStop[]>([]);
   navStopsRef.current = navStops;
 
-  // Prop-identity hygiene for <FileDiff>: annotations, options, and the
-  // annotation renderer are memoized so that moving the cursor re-renders the
-  // diff with IDENTICAL props except `selectedLines`. Fresh identities on
-  // every keystroke made the lib rebuild rows and restore its scroll position
-  // — the source of the view jumping away mid-navigation.
   const filePath = file?.path ?? '';
+  // Item id doubles as the React key: a new file remounts the view, so each
+  // file opens scrolled to the top with no leftover layout state.
+  const itemId = file ? `${filePath}:${file.staged ? 'staged' : 'unstaged'}` : '';
+  const itemIdRef = useRef('');
+  itemIdRef.current = itemId;
+
+  // Per-file cursor state dies with the file.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: itemId is the reset trigger, not an input.
+  useEffect(() => {
+    anchorRef.current = null;
+    sepCursorRef.current = null;
+    hoveredLineRef.current = null;
+    scrollTopRef.current = 0;
+  }, [
+    itemId,
+  ]);
 
   // Anchor annotations (and the draft composer) at the end of the range, so a
   // multi-line comment appears just below the block it covers.
@@ -377,9 +429,34 @@ export function DiffPane() {
     ],
   );
 
-  const renderAnnotation = useCallback<NonNullable<FileDiffProps<AnnotationMeta>['renderAnnotation']>>(
+  // Controlled items: CodeView only re-reads an item when its `version`
+  // changes (matching versions keep the current snapshot), so bump it
+  // whenever the payload (diff or annotations) does. Selection changes do
+  // NOT touch the item — moving the cursor never rebuilds the diff.
+  const versionRef = useRef(0);
+  const items = useMemo<CodeViewDiffItem<AnnotationMeta>[]>(() => {
+    if (!fileDiff || !itemId) {
+      return [];
+    }
+    versionRef.current += 1;
+    return [
+      {
+        id: itemId,
+        type: 'diff',
+        fileDiff,
+        annotations,
+        version: versionRef.current,
+      },
+    ];
+  }, [
+    fileDiff,
+    annotations,
+    itemId,
+  ]);
+
+  const renderAnnotation = useCallback<NonNullable<CodeViewProps<AnnotationMeta>['renderAnnotation']>>(
     (annotation) => {
-      const meta = annotation.metadata;
+      const meta = annotation.metadata as AnnotationMeta;
       if (meta.kind === 'draft') {
         return draft ? (
           <CommentComposer
@@ -398,23 +475,42 @@ export function DiffPane() {
     ],
   );
 
-  const diffOptions = useMemo<FileDiffProps<AnnotationMeta>['options']>(
+  // The view reports selection changes (gutter drags, programmatic writes)
+  // through one channel; the store stays the source of truth.
+  const handleSelectionChange = useCallback(
+    (
+      selection: {
+        id: string;
+        range: SelectedLineRange;
+      } | null,
+    ) => {
+      setSelectedLines(selection?.range ?? null);
+    },
+    [
+      setSelectedLines,
+    ],
+  );
+
+  const handleScroll = useCallback((scrollTop: number) => {
+    scrollTopRef.current = scrollTop;
+  }, []);
+
+  // CodeView value-compares options (shallow) before applying, so stable
+  // callback identities here mean cursor moves re-render NOTHING but the
+  // selection attributes — no row rebuilds, no scroll restoration.
+  const diffOptions = useMemo<DiffViewOptions>(
     () => ({
       diffStyle,
-      theme: {
-        dark: 'pierre-dark',
-        light: 'pierre-light',
-      },
+      theme: THEME,
       themeType: 'dark',
+      layout: LAYOUT,
       enableLineSelection: true,
-      controlledSelection: true,
       lineHoverHighlight: 'both',
       enableGutterUtility: true,
-      // Drag-select (lib) feeds our selection; record the anchor so a later
-      // shift-click / Shift+J/K extends from the drag's start.
-      onLineSelectionChange: (range) => setSelectedLines(range),
+      // Selection gestures the lib owns (gutter drag) land in the store via
+      // onSelectedLinesChange; here we only record the anchor for later
+      // shift-click / Shift+J/K extension.
       onLineSelected: (range) => {
-        setSelectedLines(range);
         if (range) {
           anchorRef.current = {
             line: range.start,
@@ -423,7 +519,11 @@ export function DiffPane() {
         }
       },
       // Click selects just that line; shift-click extends from the anchor.
+      // (Items are always diffs; the `in` checks narrow the file|diff union.)
       onLineClick: (props) => {
+        if (!('annotationSide' in props)) {
+          return;
+        }
         const anchor = anchorRef.current;
         if (props.event.shiftKey && anchor) {
           setSelectedLines({
@@ -448,6 +548,9 @@ export function DiffPane() {
       // Track the hovered line (anchor for a pointer drag); while dragging,
       // extend the selection to the line under the pointer.
       onLineEnter: (props) => {
+        if (!('annotationSide' in props)) {
+          return;
+        }
         hoveredLineRef.current = {
           line: props.lineNumber,
           side: props.annotationSide,
@@ -478,6 +581,18 @@ export function DiffPane() {
         }
         commentOnRange(filePath, range);
       },
+      // Virtualization recycles rows, dropping our hand-painted bar cursor;
+      // re-assert it after every render pass.
+      onPostRender: () => {
+        const shadow = diffShadow(viewRef.current?.getInstance());
+        if (!shadow) {
+          return;
+        }
+        clearSeparatorCursor(shadow);
+        if (sepCursorRef.current != null) {
+          highlightSeparator(shadow, sepCursorRef.current);
+        }
+      },
     }),
     [
       diffStyle,
@@ -502,26 +617,30 @@ export function DiffPane() {
       if (event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
-      const root = containerRef.current;
       const stops = navStopsRef.current;
-      if (!root || stops.length === 0) {
-        return;
-      }
-      const shadow = diffShadowRoot(root);
-      if (!shadow) {
+      const id = itemIdRef.current;
+      const view = viewRef.current?.getInstance();
+      if (!id || stops.length === 0 || !view) {
         return;
       }
       const store = useReviewStore.getState();
+      const scrollTop = scrollTopRef.current;
+      const viewportHeight = scrollerRef.current?.clientHeight ?? 0;
 
-      // Enter / Space expands the collapsed bar the cursor is on.
+      // Enter / Space expands the collapsed bar the cursor is on — through
+      // the model API (no DOM buttons involved). The bar shrinks or vanishes;
+      // the cursor stays on it either way.
       if ((event.key === 'Enter' || event.code === 'Space') && sepCursorRef.current != null) {
-        const sep = findSeparator(shadow, Number(sepCursorRef.current));
-        const button =
-          sep?.querySelector<HTMLElement>('[data-expand-down],[data-expand-both]') ??
-          sep?.querySelector<HTMLElement>('[data-expand-button],[data-unmodified-lines]');
-        if (button) {
+        const index = gapStopIndex(stops, Number(sepCursorRef.current));
+        const stop = index !== -1 ? (stops[index] as GapStop) : null;
+        const instance = renderedDiffInstance(view);
+        if (stop && instance) {
           event.preventDefault();
-          button.click();
+          navLog('expand', {
+            expandIndex: stop.expandIndex,
+            direction: stop.expandDirection,
+          });
+          instance.expandHunk(stop.expandIndex, stop.expandDirection);
         }
         return;
       }
@@ -534,17 +653,42 @@ export function DiffPane() {
       event.preventDefault();
       const direction: 1 | -1 = event.key === ']' || event.code === 'KeyJ' ? 1 : -1;
 
+      // Scroll a stop's row toward view. align:'nearest' is a no-op when the
+      // row (plus margin) is already visible; otherwise the view moves the
+      // minimum distance. The lib re-resolves the target every frame until
+      // the scroll settles, so late row measurements can't strand the cursor.
+      const scrollCursorTo = (stop: NavStop) => {
+        const anchor = stopAnchor(stop);
+        navLog('scrollTo', {
+          line: anchor.line,
+          side: anchor.side,
+        });
+        viewRef.current?.scrollTo({
+          type: 'line',
+          id,
+          lineNumber: anchor.line,
+          side: anchor.side,
+          align: 'nearest',
+          offset: NAV_MARGIN,
+          behavior: 'instant',
+        });
+      };
+
       // Land the cursor on a stop: update selection / bar highlight + scroll.
       // Landing on a bar deliberately does NOT touch the line selection — the
-      // selectedLines=null re-render made the diff lib mis-restore its scroll
-      // position (the observed jump). The bar highlight alone is the cursor;
-      // sepCursorRef takes precedence when resolving it below.
+      // bar highlight alone is the cursor; sepCursorRef takes precedence when
+      // resolving it below.
       const applyStop = (index: number) => {
         const stop = stops[index];
-        clearSeparatorCursor(shadow);
+        const shadow = diffShadow(view);
+        if (shadow) {
+          clearSeparatorCursor(shadow);
+        }
         if (stop.kind === 'gap') {
           sepCursorRef.current = String(stop.expandIndex);
-          highlightSeparator(shadow, sepCursorRef.current);
+          if (shadow) {
+            highlightSeparator(shadow, sepCursorRef.current);
+          }
         } else {
           sepCursorRef.current = null;
           anchorRef.current = {
@@ -558,10 +702,7 @@ export function DiffPane() {
             endSide: stop.side,
           });
         }
-        // Scroll now, and re-assert for a few frames: the lib can scroll
-        // asynchronously after our handler (scroll restoration on re-render);
-        // the hold is idempotent and vertical-only, so it only corrects drift.
-        holdRowInView(root, () => stopElement(shadow, stop));
+        scrollCursorTo(stop);
       };
 
       // Where is the cursor? The highlighted bar when the cursor is on one
@@ -585,12 +726,12 @@ export function DiffPane() {
           cursor = nearestLineStop(stops, selection.end);
         }
       }
-      if (cursor !== -1 && !stopInViewport(root, shadow, stops[cursor])) {
+      if (cursor !== -1 && !stopInViewport(view, id, scrollTop, viewportHeight, stops[cursor])) {
         navLog('cursor off-screen, resuming from viewport');
         cursor = -1;
       }
       if (cursor === -1) {
-        const visible = firstVisibleStopIndex(root, shadow, stops);
+        const visible = firstVisibleStopIndex(view, id, scrollTop, viewportHeight, stops);
         if (visible === -1) {
           return;
         }
@@ -633,14 +774,22 @@ export function DiffPane() {
           end: endStop.line,
           endSide: endStop.side,
         });
-        holdRowInView(root, () => findCursorCell(shadow, endStop.line, endStop.side));
+        scrollCursorTo(endStop);
         return;
       }
 
       // Plain j/k — step to the adjacent stop. A bar that was expanded away
-      // (its element no longer renders) is skipped.
+      // (its element no longer renders) is skipped; bars adjacent to the
+      // in-viewport cursor are inside the render window, so a missing element
+      // means expanded, not unrendered.
+      const shadow = diffShadow(view);
       let next = cursor + direction;
-      while (stops[next] && stops[next].kind === 'gap' && stopElement(shadow, stops[next]) == null) {
+      while (
+        stops[next] &&
+        stops[next].kind === 'gap' &&
+        shadow &&
+        findSeparator(shadow, (stops[next] as GapStop).expandIndex) == null
+      ) {
         navLog('skipping expanded-away bar', {
           expandIndex: (stops[next] as GapStop).expandIndex,
         });
@@ -663,37 +812,12 @@ export function DiffPane() {
   // When a line gets selected (click, drag, Shift+J/K), drop any bar highlight.
   useEffect(() => {
     if (selectedLines) {
-      const root = containerRef.current;
-      const shadow = root ? diffShadowRoot(root) : null;
+      const shadow = diffShadow(viewRef.current?.getInstance());
       if (shadow) {
         clearSeparatorCursor(shadow);
       }
       sepCursorRef.current = null;
     }
-  }, [
-    selectedLines,
-  ]);
-
-  // Keep the cursor row vertically in view after the selection changes. The diff
-  // lib mis-scrolls (jumps toward the top) when a deletions-side selection is
-  // applied in split view; re-centering on the real cursor row — after the lib's
-  // own scroll, since parent layout effects run after the child's — corrects it.
-  // Vertical-only (horizontal stays put) and a no-op when the row is already in
-  // view, so clicks and drag-select aren't disturbed.
-  useLayoutEffect(() => {
-    if (!selectedLines) {
-      return;
-    }
-    const root = containerRef.current;
-    if (!root) {
-      return;
-    }
-    const shadow = diffShadowRoot(root);
-    if (!shadow) {
-      return;
-    }
-    const endSide = selectedLines.endSide ?? selectedLines.side ?? 'additions';
-    holdRowInView(root, () => findCursorCell(shadow, selectedLines.end, endSide));
   }, [
     selectedLines,
   ]);
@@ -805,17 +929,26 @@ export function DiffPane() {
           Binary file — diff not shown
         </div>
       ) : (
-        <Virtualizer className="min-h-0 flex-1 overflow-auto bg-background select-none">
-          <FileDiff<AnnotationMeta>
-            key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
-            fileDiff={fileDiff}
-            options={diffOptions}
-            selectedLines={selectedLines}
-            lineAnnotations={annotations}
-            renderAnnotation={renderAnnotation}
-            disableWorkerPool
-          />
-        </Virtualizer>
+        <CodeView<AnnotationMeta>
+          key={itemId}
+          ref={viewRef}
+          containerRef={scrollerRef}
+          className="min-h-0 flex-1 overflow-auto bg-background select-none"
+          items={items}
+          options={diffOptions}
+          selectedLines={
+            selectedLines
+              ? {
+                  id: itemId,
+                  range: selectedLines,
+                }
+              : null
+          }
+          onSelectedLinesChange={handleSelectionChange}
+          onScroll={handleScroll}
+          renderAnnotation={renderAnnotation}
+          disableWorkerPool
+        />
       )}
     </div>
   );

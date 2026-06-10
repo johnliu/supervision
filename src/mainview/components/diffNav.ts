@@ -8,9 +8,9 @@
 // between change blocks, and a collapsed-context bar is a single stop.
 //
 // Because the model is pure data, virtualization, re-renders, and scroll
-// position cannot confuse the cursor. The DOM is only consulted for the two
-// questions that are genuinely about the screen: "which row is visible?" and
-// "scroll this row into view" — both live in DiffPane, not here.
+// position cannot confuse the cursor. Scrolling and visibility are answered
+// by CodeView's layout model (scrollTo / getLinePosition) in DiffPane; the
+// DOM is only touched to paint the cursor on a collapsed-context bar.
 //
 // Known, accepted simplification: lines revealed by expanding a collapsed bar
 // ("context-expanded") are NOT stops — after expanding, j/k continues to the
@@ -42,6 +42,10 @@ export interface GapStop {
   /** Matches the renderer's `data-expand-index` (the hunk index; the trailing
    * bar is `hunks.length`), so the bar can be highlighted and expanded. */
   expandIndex: number;
+  /** The direction `expandHunk(expandIndex, …)` takes for this bar — mirrors
+   * the expand button the renderer draws: the leading bar (above the first
+   * hunk) expands 'down', the trailing bar 'up', bars between hunks 'both'. */
+  expandDirection: 'up' | 'down' | 'both';
   /** Unchanged lines hidden behind the bar. */
   lines: number;
   /** The new-file line range this gap covers (inclusive). A selection on a
@@ -90,6 +94,7 @@ export function buildNavStops(
       stops.push({
         kind: 'gap',
         expandIndex: hunkIndex,
+        expandDirection: hunkIndex === 0 ? 'down' : 'both',
         lines: hunk.collapsedBefore,
         addStart: hunk.additionStart - hunk.collapsedBefore,
         addEnd: hunk.additionStart - 1,
@@ -161,6 +166,7 @@ export function buildNavStops(
       stops.push({
         kind: 'gap',
         expandIndex: diff.hunks.length,
+        expandDirection: 'up',
         lines: newFileLines - renderedThrough,
         addStart: renderedThrough + 1,
         addEnd: newFileLines,
