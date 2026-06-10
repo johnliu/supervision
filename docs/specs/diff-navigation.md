@@ -62,9 +62,9 @@ Pure function of (parsed diff, view mode, expansion map). Unit-testable.
 | EXP-6 | After expanding via Enter/Space on the bar cursor: pressing `j` from the line above the expanded region lands on the **first revealed line**, and `k` from the line below lands on the **last revealed line** — never leaping past the region. | The original regression. Nav model and renderer must agree on what is revealed. | planned:e2e |
 | EXP-7 | EXP-6 holds identically when the expansion came from a mouse click on the bar's pill or expand buttons (pill = the bar's own direction(s); each button = its direction). | Clicks are handled inside the diff library; the nav model mirrors them. | planned:e2e |
 | EXP-8 | Expanding a bar (any entry point) never changes the line selection. | A selection made for a comment must survive expansion. | planned:e2e |
-| EXP-9 | When a bar becomes fully revealed, its bar cursor is dropped; the next j/k resolves from the still-present line selection and steps into the revealed lines. | | planned:e2e |
+| EXP-9 | Every expansion drops the bar cursor: the cursor reverts to the line selection so stepping continues from the reading position (EXP-6); expanding further requires landing on the (smaller) bar again. | Without this, a retained bar cursor + CUR-5 would make j skip the revealed lines above the remaining bar. Shift+click / "Expand all" covers "reveal everything now". | planned:e2e |
 | EXP-10 | j/k never lands on a bar that no longer renders (fully revealed). | Fully revealed gaps leave the stop list; a virtualization-recycled bar that still exists is a valid landing target. | planned:e2e |
-| EXP-11 | Expansion state is per file and resets on file switch: returning to a file shows its bars collapsed again, and the stop list matches. | | planned:unit + planned:e2e |
+| EXP-11 | Expansion state is remembered **per file (and per staged/unstaged side) for the app session**: switching away and back restores the same revealed lines, with the stop list matching. It resets when that file's diff content changes, and on relaunch. | *(Amended in review: was reset-on-switch.)* Content change invalidates the map because bar indices shift; detected via a cheap content fingerprint, so unrelated-file refreshes don't clear it. | planned:e2e |
 
 ## NAV — cursor stepping
 
@@ -88,8 +88,8 @@ Where a keypress decides "where am I?" before stepping.
 | CUR-2 | With no bar cursor, the cursor is the stop matching the selection's end **on its own side** — a deletions-side selection of old-line N never resolves to new-line N's row. | | planned:unit |
 | CUR-3 | A selection end on a line currently hidden behind a bar resolves to that bar's gap stop. | E.g. after collapsing again via file-switch-and-back. | planned:unit |
 | CUR-4 | A selection end matching no stop and no hidden range resolves to the nearest line stop by line distance. | Defensive fallback; keeps the cursor usable. | planned:unit |
-| CUR-5 | When neither the bar cursor nor the selection-derived stop is visible in the viewport, the next j/k resumes from the first visible stop — landing **on** it, not past it. | Prevents the view yanking back to a far-away cursor. | planned:e2e |
-| CUR-6 | When an expansion pushes the bar cursor out of the viewport while the line selection is still visible, the selection wins resolution and j steps into the freshly revealed lines. | | planned:e2e |
+| CUR-5 | j/k always steps **from the cursor**, even when it has been scrolled out of view — the destination row is brought into view, returning the viewport to the cursor's neighborhood. Only when no cursor exists at all (no selection and no bar cursor, e.g. a freshly opened file) does navigation begin from the first visible stop, landing **on** it. | The cursor is the source of truth; manual scrolling never relocates it. *(Amended in review: was resume-from-viewport.)* | planned:e2e |
+| CUR-6 | ~~When an expansion pushes the bar cursor out of the viewport while the line selection is still visible, the selection wins resolution and j steps into the freshly revealed lines.~~ Superseded by EXP-9 (every expansion drops the bar cursor) + CUR-5 (the cursor is never silently abandoned). | Withdrawn with the resume-from-viewport policy. | — |
 
 ## SEL — selection
 
@@ -112,7 +112,7 @@ Where a keypress decides "where am I?" before stepping.
 | SCR-2 | No scroll occurs when the destination row is already fully visible with the margin — repeated j/k inside the viewport leaves scrollTop untouched until the cursor nears an edge. | | planned:e2e |
 | SCR-3 | `]`/`[` to an off-screen change block lands with the cursor row inside the viewport (within margin of an edge at worst). | | planned:e2e |
 | SCR-4 | Expanding a bar issues no cursor scroll, and the rows visible above the bar keep their on-screen position — revealed lines appear in place at the bar's location, never teleporting the viewport. | The renderer anchors the relayout; we must not fight it. | planned:e2e |
-| SCR-5 | After the user scrolls the cursor out of view, the next j/k resumes from the viewport (CUR-5) — it must not scroll back to the old cursor position. | | planned:e2e |
+| SCR-5 | After the user scrolls the cursor out of view, the next j/k steps from the cursor and brings the destination row back into view (CUR-5) — manual scrolling never relocates the cursor. | *(Amended in review: was resume-from-viewport.)* | planned:e2e |
 | SCR-6 | Every file opens scrolled to the top. | Per-file view remount. | planned:e2e |
 | SCR-7 | Keyboard navigation never changes horizontal scroll. | Long-line fixture; scroll right, j/k, offset preserved. | planned:e2e |
 
@@ -120,7 +120,7 @@ Where a keypress decides "where am I?" before stepping.
 
 | ID | Behavior (MUST) | Notes | Covered by |
 |----|-----------------|-------|------------|
-| FILE-1 | File switch resets navigation state: cursor, anchor, bar cursor, and expansion map. | | planned:e2e |
+| FILE-1 | File switch resets the cursor, anchor, and bar cursor (selection clears per SEL-8). Expansion state persists per EXP-11. | *(Amended in review: expansion no longer resets here.)* | planned:e2e |
 | FILE-2 | Toggling split↔unified preserves the line selection, and the cursor resolves to the same file line in the new layout's stop list. | Stop indices differ between modes; the line must not. | planned:e2e |
 | FILE-3 | For a file present in both buckets, the Unstaged/Staged toggle swaps to the other entry's contents with a fresh view (top scroll, reset nav state). | | planned:e2e |
 
