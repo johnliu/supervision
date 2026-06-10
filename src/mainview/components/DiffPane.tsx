@@ -22,6 +22,12 @@
 // from the model: logical scrollTop (onScroll) + viewport height +
 // getLinePosition. The DOM is touched only to paint the keyboard cursor on a
 // collapsed-context bar (and to check such a bar still renders).
+//
+// Expanding a bar (Enter) advances an `expandedHunks` map in lockstep with the
+// renderer's own expansion, so buildNavStops turns the revealed lines into real
+// stops and j/k steps through them instead of leaping to the next hunk. The
+// scroller's background is synced to the diff's own surface (onPostRender) so a
+// diff shorter than the pane doesn't show a differently-shaded void below it.
 
 import { parseDiffFromFile } from '@pierre/diffs';
 import {
@@ -39,6 +45,7 @@ import { CommentComposer, CommentThread } from './CommentThread';
 import {
   buildNavStops,
   countLines,
+  type ExpansionMap,
   type GapStop,
   gapIndexForLine,
   gapStopIndex,
@@ -73,6 +80,11 @@ type DiffInstance = RenderedDiff['instance'];
 // Pixels kept between the cursor row and the viewport edge when scrolling.
 // Doubles as render-ahead: the row lands inside the virtualizer's window.
 const NAV_MARGIN = 40;
+
+// Lines revealed per Enter on a collapsed bar. Must match the count
+// instance.expandHunk() applies (the lib default expansionLineCount, which we
+// don't override) so our nav model and the renderer reveal the same lines.
+const EXPANSION_LINE_COUNT = 100;
 
 const THEME = {
   dark: 'pierre-dark',
@@ -295,6 +307,16 @@ export function DiffPane() {
   } | null>(null);
   // Expand-index of the collapsed bar the keyboard cursor is on (null = on a line).
   const sepCursorRef = useRef<string | null>(null);
+  // How far each collapsed bar has been expanded — kept in lockstep with the
+  // renderer's own expansion (instance.expandHunk) so buildNavStops turns the
+  // revealed lines into real stops. State (drives the navStops rebuild) plus a
+  // ref (read by the []-deps keydown listener).
+  const [expandedHunks, setExpandedHunks] = useState<ExpansionMap>(() => new Map());
+  const expandedHunksRef = useRef<ExpansionMap>(expandedHunks);
+  expandedHunksRef.current = expandedHunks;
+  // Last bg color pushed onto the scroller, so the per-render bg sync only
+  // writes when the diff's surface color actually changes (see onPostRender).
+  const lastBgRef = useRef<string | null>(null);
   // Drag-to-select on the code area (the lib's own line-drag is gutter-only):
   // pointerdown on a line starts a drag, onLineEnter extends it.
   const draggingRef = useRef(false);
@@ -368,17 +390,25 @@ export function DiffPane() {
 
   // The keyboard's stop list for the current view mode (see diffNav.ts), kept
   // in a ref so the []-deps keydown listener always reads the current one.
+  // Rebuilds when a bar is expanded so the revealed lines become real stops.
   const navStops = useMemo(
-    () => (fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents), countLines(oldContents)) : []),
+    () => (fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents), expandedHunks) : []),
     [
       fileDiff,
       diffStyle,
       newContents,
-      oldContents,
+      expandedHunks,
     ],
   );
   const navStopsRef = useRef<NavStop[]>([]);
   navStopsRef.current = navStops;
+  // Rebuild stops for a hypothetical expansion map, closing over the current
+  // render's diff/inputs. The Enter handler uses this to refresh navStopsRef
+  // synchronously, so a j/k pressed in the same frame as an expand already sees
+  // the revealed lines (setExpandedHunks only updates the model on re-render).
+  const rebuildNavStopsRef = useRef<(expanded: ExpansionMap) => NavStop[]>(() => []);
+  rebuildNavStopsRef.current = (expanded: ExpansionMap) =>
+    fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents), expanded) : [];
 
   const filePath = file?.path ?? '';
   // Item id doubles as the React key: a new file remounts the view, so each
@@ -387,15 +417,29 @@ export function DiffPane() {
   const itemIdRef = useRef('');
   itemIdRef.current = itemId;
 
-  // Per-file cursor state dies with the file.
+  // Per-file cursor + expansion state dies with the file.
   // biome-ignore lint/correctness/useExhaustiveDependencies: itemId is the reset trigger, not an input.
   useEffect(() => {
     anchorRef.current = null;
     sepCursorRef.current = null;
     hoveredLineRef.current = null;
     scrollTopRef.current = 0;
+    lastBgRef.current = null;
+    setExpandedHunks(new Map());
   }, [
     itemId,
+  ]);
+
+  // A bar fully revealed by expansion is no longer a gap stop. Drop the bar
+  // cursor when its stop disappears so the next j/k resolves from the line
+  // selection (which sits just before the now-revealed lines) and steps
+  // straight into them instead of being stuck on a phantom bar.
+  useEffect(() => {
+    if (sepCursorRef.current != null && gapStopIndex(navStops, Number(sepCursorRef.current)) === -1) {
+      sepCursorRef.current = null;
+    }
+  }, [
+    navStops,
   ]);
 
   // Anchor annotations (and the draft composer) at the end of the range, so a
@@ -581,13 +625,28 @@ export function DiffPane() {
         }
         commentOnRange(filePath, range);
       },
-      // Virtualization recycles rows, dropping our hand-painted bar cursor;
-      // re-assert it after every render pass.
+      // Runs after each diff render pass — the reliable point at which the
+      // theme is applied, so we use it for two render-coupled chores:
       onPostRender: () => {
         const shadow = diffShadow(viewRef.current?.getInstance());
         if (!shadow) {
           return;
         }
+        // 1. Match the scroller's background to the diff's own surface. The diff
+        // paints a near-black background (pierre's theme) while the app chrome
+        // is a lighter gray; without this, a diff shorter than the pane shows a
+        // starkly different-colored void below the last line. Sampling the
+        // rendered surface (vs hardcoding) keeps it correct across themes.
+        const scroller = scrollerRef.current;
+        if (scroller) {
+          const bg = getComputedStyle(shadow.host as HTMLElement).backgroundColor;
+          if (bg && bg !== lastBgRef.current) {
+            lastBgRef.current = bg;
+            scroller.style.backgroundColor = bg;
+          }
+        }
+        // 2. Virtualization recycles rows, dropping our hand-painted bar cursor;
+        // re-assert it.
         clearSeparatorCursor(shadow);
         if (sepCursorRef.current != null) {
           highlightSeparator(shadow, sepCursorRef.current);
@@ -627,9 +686,13 @@ export function DiffPane() {
       const scrollTop = scrollTopRef.current;
       const viewportHeight = scrollerRef.current?.clientHeight ?? 0;
 
-      // Enter / Space expands the collapsed bar the cursor is on — through
-      // the model API (no DOM buttons involved). The bar shrinks or vanishes;
-      // the cursor stays on it either way.
+      // Enter / Space expands the collapsed bar the cursor is on — through the
+      // model API (no DOM buttons involved). We advance OUR expansion state by
+      // the same line count the renderer uses, so buildNavStops reveals exactly
+      // the lines the renderer reveals: j/k then steps through them instead of
+      // leaping past to the next hunk. We don't scroll — CodeView keeps the
+      // viewport anchored across the layout change. If the bar is fully revealed
+      // the gap stop vanishes and the [navStops] effect drops sepCursorRef.
       if ((event.key === 'Enter' || event.code === 'Space') && sepCursorRef.current != null) {
         const index = gapStopIndex(stops, Number(sepCursorRef.current));
         const stop = index !== -1 ? (stops[index] as GapStop) : null;
@@ -640,6 +703,25 @@ export function DiffPane() {
             expandIndex: stop.expandIndex,
             direction: stop.expandDirection,
           });
+          const region = {
+            ...(expandedHunksRef.current.get(stop.expandIndex) ?? {
+              fromStart: 0,
+              fromEnd: 0,
+            }),
+          };
+          if (stop.expandDirection === 'up' || stop.expandDirection === 'both') {
+            region.fromStart += EXPANSION_LINE_COUNT;
+          }
+          if (stop.expandDirection === 'down' || stop.expandDirection === 'both') {
+            region.fromEnd += EXPANSION_LINE_COUNT;
+          }
+          const nextExpanded = new Map(expandedHunksRef.current);
+          nextExpanded.set(stop.expandIndex, region);
+          // Refresh the stop list now (not just on the re-render setExpandedHunks
+          // schedules) so an immediately-following j/k already sees the revealed
+          // lines as stops instead of leaping over the bar to the next hunk.
+          navStopsRef.current = rebuildNavStopsRef.current(nextExpanded);
+          setExpandedHunks(nextExpanded);
           instance.expandHunk(stop.expandIndex, stop.expandDirection);
         }
         return;
@@ -705,32 +787,40 @@ export function DiffPane() {
         scrollCursorTo(stop);
       };
 
-      // Where is the cursor? The highlighted bar when the cursor is on one
-      // (it outranks the still-present line selection), else the selection's
-      // end matched on its own side. If it's unknown or was scrolled out of
-      // view, resume from the first visible row instead of yanking the view.
+      // Where is the cursor? Try, in order, the highlighted bar (it outranks
+      // the still-present line selection) then the selection's end on its own
+      // side — but accept each only if it is actually on screen. A candidate
+      // scrolled out of view is skipped, so after expanding a bar that gets
+      // pushed off-screen, j/k resumes from the still-visible line selection
+      // (stepping straight into the freshly revealed lines) rather than the bar.
+      // If neither is visible, resume from the first row in the viewport.
       const selection = store.selectedLines;
+      const inView = (index: number) =>
+        index !== -1 && stopInViewport(view, id, scrollTop, viewportHeight, stops[index]);
       let cursor = -1;
       if (sepCursorRef.current != null) {
-        cursor = gapStopIndex(stops, Number(sepCursorRef.current));
+        const barIndex = gapStopIndex(stops, Number(sepCursorRef.current));
+        if (inView(barIndex)) {
+          cursor = barIndex;
+        }
       }
       if (cursor === -1 && selection) {
         const endSide = (selection.endSide ?? selection.side ?? 'additions') as AnnotationSide;
-        cursor = stopIndexForSelection(stops, selection.end, endSide);
-        if (cursor === -1) {
-          // Not a modeled row — a line revealed by expanding a bar resolves to
-          // that bar's gap stop; anything else falls back to the nearest stop.
-          cursor = gapIndexForLine(stops, selection.end, endSide);
+        let selIndex = stopIndexForSelection(stops, selection.end, endSide);
+        if (selIndex === -1) {
+          // Not a modeled row — a line still hidden behind a bar resolves to that
+          // bar's gap stop; anything else falls back to the nearest stop.
+          selIndex = gapIndexForLine(stops, selection.end, endSide);
         }
-        if (cursor === -1) {
-          cursor = nearestLineStop(stops, selection.end);
+        if (selIndex === -1) {
+          selIndex = nearestLineStop(stops, selection.end);
         }
-      }
-      if (cursor !== -1 && !stopInViewport(view, id, scrollTop, viewportHeight, stops[cursor])) {
-        navLog('cursor off-screen, resuming from viewport');
-        cursor = -1;
+        if (inView(selIndex)) {
+          cursor = selIndex;
+        }
       }
       if (cursor === -1) {
+        navLog('cursor off-screen, resuming from viewport');
         const visible = firstVisibleStopIndex(view, id, scrollTop, viewportHeight, stops);
         if (visible === -1) {
           return;

@@ -60,6 +60,81 @@ export interface GapStop {
 
 export type NavStop = LineStop | GapStop;
 
+/** How far a collapsed bar has been expanded, mirroring the renderer's own
+ * expansion state: `fromStart` lines revealed from the top of the hidden range,
+ * `fromEnd` from the bottom. Keyed by the bar's `expandIndex`. */
+export interface ExpansionRegion {
+  fromStart: number;
+  fromEnd: number;
+}
+export type ExpansionMap = Map<number, ExpansionRegion>;
+
+// Mirrors @pierre/diffs DEFAULT_COLLAPSED_CONTEXT_THRESHOLD: a hidden range this
+// small is rendered in full (no bar), so it must be treated as fully revealed.
+const COLLAPSE_THRESHOLD = 1;
+
+/** A context row present on both sides (revealed by expanding, or plain context). */
+function pushContextLine(stops: NavStop[], addLine: number, delLine: number): void {
+  stops.push({
+    kind: 'line',
+    line: addLine,
+    side: 'additions',
+    addLine,
+    delLine,
+    change: false,
+  });
+}
+
+// Emit a collapsed range as the renderer draws it once expansion is applied:
+// `fromStart` revealed line stops at the top, then a (smaller) gap stop for what
+// is still hidden, then `fromEnd` revealed line stops at the bottom. A fully
+// revealed range collapses to plain context stops with no gap. The split of
+// fromStart/fromEnd mirrors getExpandedRegion (leading/middle gaps use both;
+// the trailing gap only ever reveals from the top, so its fromEnd is forced 0).
+function pushCollapsedRange(
+  stops: NavStop[],
+  params: {
+    expandIndex: number;
+    expandDirection: 'up' | 'down' | 'both';
+    size: number;
+    addStart: number;
+    delStart: number;
+    expanded: ExpansionMap;
+    trailing: boolean;
+  },
+): void {
+  const { expandIndex, expandDirection, size, addStart, delStart, expanded, trailing } = params;
+  const region = expanded.get(expandIndex);
+  let fromStart = Math.min(Math.max(region?.fromStart ?? 0, 0), size);
+  let fromEnd = trailing ? 0 : Math.min(Math.max(region?.fromEnd ?? 0, 0), size);
+  if (size <= COLLAPSE_THRESHOLD) {
+    fromStart = size;
+    fromEnd = 0;
+  }
+  if (fromStart + fromEnd >= size) {
+    for (let i = 0; i < size; i++) {
+      pushContextLine(stops, addStart + i, delStart + i);
+    }
+    return;
+  }
+  for (let i = 0; i < fromStart; i++) {
+    pushContextLine(stops, addStart + i, delStart + i);
+  }
+  stops.push({
+    kind: 'gap',
+    expandIndex,
+    expandDirection,
+    lines: size - fromStart - fromEnd,
+    addStart: addStart + fromStart,
+    addEnd: addStart + size - fromEnd - 1,
+    delStart: delStart + fromStart,
+    delEnd: delStart + size - fromEnd - 1,
+  });
+  for (let i = size - fromEnd; i < size; i++) {
+    pushContextLine(stops, addStart + i, delStart + i);
+  }
+}
+
 /** Lines in `contents`, ignoring a trailing newline (matching diff line counts). */
 export function countLines(contents: string): number {
   if (contents.length === 0) {
@@ -85,21 +160,20 @@ export function buildNavStops(
   diff: FileDiffMetadata,
   diffStyle: DiffStyle,
   newFileLines: number,
-  oldFileLines: number,
+  expanded: ExpansionMap = new Map(),
 ): NavStop[] {
   const stops: NavStop[] = [];
 
   diff.hunks.forEach((hunk, hunkIndex) => {
     if (hunk.collapsedBefore > 0) {
-      stops.push({
-        kind: 'gap',
+      pushCollapsedRange(stops, {
         expandIndex: hunkIndex,
         expandDirection: hunkIndex === 0 ? 'down' : 'both',
-        lines: hunk.collapsedBefore,
+        size: hunk.collapsedBefore,
         addStart: hunk.additionStart - hunk.collapsedBefore,
-        addEnd: hunk.additionStart - 1,
         delStart: hunk.deletionStart - hunk.collapsedBefore,
-        delEnd: hunk.deletionStart - 1,
+        expanded,
+        trailing: false,
       });
     }
     let addLine = hunk.additionStart;
@@ -163,15 +237,16 @@ export function buildNavStops(
   if (last) {
     const renderedThrough = last.additionStart + last.additionCount - 1;
     if (renderedThrough < newFileLines) {
-      stops.push({
-        kind: 'gap',
+      pushCollapsedRange(stops, {
         expandIndex: diff.hunks.length,
         expandDirection: 'up',
-        lines: newFileLines - renderedThrough,
+        size: newFileLines - renderedThrough,
         addStart: renderedThrough + 1,
-        addEnd: newFileLines,
         delStart: last.deletionStart + last.deletionCount,
-        delEnd: oldFileLines,
+        expanded,
+        // The trailing gap only ever reveals from the top (toward the last
+        // hunk); getTrailingExpandedRegion ignores fromEnd, so we must too.
+        trailing: true,
       });
     }
   }
