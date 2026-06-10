@@ -6,3 +6,7 @@ artifacts/
 
 # Supervision's own runtime review data (created when reviewing this repo)
 .supervision/
+
+# Playwright output
+test-results/
+playwright-report/
