@@ -44,6 +44,14 @@ export interface GapStop {
   expandIndex: number;
   /** Unchanged lines hidden behind the bar. */
   lines: number;
+  /** The new-file line range this gap covers (inclusive). A selection on a
+   * line revealed by expanding the bar falls inside this range and resolves
+   * to the gap stop. */
+  addStart: number;
+  addEnd: number;
+  /** The old-file line range this gap covers (inclusive). */
+  delStart: number;
+  delEnd: number;
 }
 
 export type NavStop = LineStop | GapStop;
@@ -69,7 +77,12 @@ export function countLines(contents: string): number {
  *   - a hunk with `collapsedBefore > 0` is preceded by a gap stop, and lines
  *     after the last hunk produce a trailing gap stop.
  */
-export function buildNavStops(diff: FileDiffMetadata, diffStyle: DiffStyle, newFileLines: number): NavStop[] {
+export function buildNavStops(
+  diff: FileDiffMetadata,
+  diffStyle: DiffStyle,
+  newFileLines: number,
+  oldFileLines: number,
+): NavStop[] {
   const stops: NavStop[] = [];
 
   diff.hunks.forEach((hunk, hunkIndex) => {
@@ -78,6 +91,10 @@ export function buildNavStops(diff: FileDiffMetadata, diffStyle: DiffStyle, newF
         kind: 'gap',
         expandIndex: hunkIndex,
         lines: hunk.collapsedBefore,
+        addStart: hunk.additionStart - hunk.collapsedBefore,
+        addEnd: hunk.additionStart - 1,
+        delStart: hunk.deletionStart - hunk.collapsedBefore,
+        delEnd: hunk.deletionStart - 1,
       });
     }
     let addLine = hunk.additionStart;
@@ -145,11 +162,30 @@ export function buildNavStops(diff: FileDiffMetadata, diffStyle: DiffStyle, newF
         kind: 'gap',
         expandIndex: diff.hunks.length,
         lines: newFileLines - renderedThrough,
+        addStart: renderedThrough + 1,
+        addEnd: newFileLines,
+        delStart: last.deletionStart + last.deletionCount,
+        delEnd: oldFileLines,
       });
     }
   }
 
   return stops;
+}
+
+/**
+ * Index of the gap stop whose hidden range contains `line` on `side`, or -1.
+ * Resolves a selection on a line revealed by expanding a bar (those lines are
+ * not stops) to the bar itself, so navigation continues from the right place.
+ */
+export function gapIndexForLine(stops: NavStop[], line: number, side: AnnotationSide): number {
+  return stops.findIndex(
+    (stop) =>
+      stop.kind === 'gap' &&
+      (side === 'deletions'
+        ? line >= stop.delStart && line <= stop.delEnd
+        : line >= stop.addStart && line <= stop.addEnd),
+  );
 }
 
 /** Index of the stop holding a selection that ends on `line`/`side`, or -1. */

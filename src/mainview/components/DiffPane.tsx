@@ -10,14 +10,16 @@
 // and handed to <FileDiff>, so the model and the pixels can't disagree.
 
 import { parseDiffFromFile } from '@pierre/diffs';
-import { type DiffLineAnnotation, FileDiff, Virtualizer } from '@pierre/diffs/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type DiffLineAnnotation, FileDiff, type FileDiffProps, Virtualizer } from '@pierre/diffs/react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AnnotationSide } from '../../shared/types';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
 import {
   buildNavStops,
   countLines,
+  type GapStop,
+  gapIndexForLine,
   gapStopIndex,
   type NavStop,
   nearestLineStop,
@@ -187,14 +189,29 @@ function firstVisibleStopIndex(root: HTMLElement, shadow: ShadowRoot, stops: Nav
   return exact !== -1 ? exact : nearestLineStop(stops, best.line);
 }
 
+// The separator's own box never reaches the screen: its inner pill
+// ([data-separator-content]) has an opaque background and negative margins
+// that cover the parent — styles set on the outer element are invisible.
+// The cursor highlight is painted on the pill(s) instead.
+function separatorPills(el: HTMLElement): HTMLElement[] {
+  const pills = el.querySelectorAll<HTMLElement>('[data-separator-content]');
+  return pills.length > 0
+    ? Array.from(pills)
+    : [
+        el,
+      ];
+}
+
 // Highlight every separator element for one collapsed region (split view renders
 // it across the additions + deletions columns, so highlight them all).
 function highlightSeparator(shadow: ShadowRoot, expandIndex: string): void {
   for (const el of shadow.querySelectorAll<HTMLElement>(`[data-separator][data-expand-index="${expandIndex}"]`)) {
     el.setAttribute('data-nav-cursor', '');
-    el.style.outline = '2px solid #3b82f6';
-    el.style.outlineOffset = '-2px';
-    el.style.background = 'rgba(59, 130, 246, 0.16)';
+    for (const pill of separatorPills(el)) {
+      pill.style.outline = '2px solid #3b82f6';
+      pill.style.outlineOffset = '-2px';
+      pill.style.background = 'rgba(59, 130, 246, 0.16)';
+    }
   }
 }
 
@@ -202,9 +219,14 @@ function highlightSeparator(shadow: ShadowRoot, expandIndex: string): void {
 function clearSeparatorCursor(shadow: ShadowRoot): void {
   for (const el of shadow.querySelectorAll<HTMLElement>('[data-nav-cursor]')) {
     el.removeAttribute('data-nav-cursor');
-    el.style.outline = '';
-    el.style.outlineOffset = '';
-    el.style.background = '';
+    for (const pill of [
+      el,
+      ...separatorPills(el),
+    ]) {
+      pill.style.outline = '';
+      pill.style.outlineOffset = '';
+      pill.style.background = '';
+    }
   }
 }
 
@@ -306,15 +328,164 @@ export function DiffPane() {
   // The keyboard's stop list for the current view mode (see diffNav.ts), kept
   // in a ref so the []-deps keydown listener always reads the current one.
   const navStops = useMemo(
-    () => (fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents)) : []),
+    () => (fileDiff ? buildNavStops(fileDiff, diffStyle, countLines(newContents), countLines(oldContents)) : []),
     [
       fileDiff,
       diffStyle,
       newContents,
+      oldContents,
     ],
   );
   const navStopsRef = useRef<NavStop[]>([]);
   navStopsRef.current = navStops;
+
+  // Prop-identity hygiene for <FileDiff>: annotations, options, and the
+  // annotation renderer are memoized so that moving the cursor re-renders the
+  // diff with IDENTICAL props except `selectedLines`. Fresh identities on
+  // every keystroke made the lib rebuild rows and restore its scroll position
+  // — the source of the view jumping away mid-navigation.
+  const filePath = file?.path ?? '';
+
+  // Anchor annotations (and the draft composer) at the end of the range, so a
+  // multi-line comment appears just below the block it covers.
+  const annotations = useMemo<DiffLineAnnotation<AnnotationMeta>[]>(
+    () => [
+      ...fileComments.map((comment) => ({
+        side: comment.endSide ?? comment.side,
+        lineNumber: comment.endLine ?? comment.line,
+        metadata: {
+          kind: 'comment' as const,
+          id: comment.id,
+        },
+      })),
+      ...(draft && draft.path === filePath
+        ? [
+            {
+              side: draft.endSide ?? draft.side,
+              lineNumber: draft.endLine ?? draft.line,
+              metadata: {
+                kind: 'draft' as const,
+              },
+            },
+          ]
+        : []),
+    ],
+    [
+      fileComments,
+      draft,
+      filePath,
+    ],
+  );
+
+  const renderAnnotation = useCallback<NonNullable<FileDiffProps<AnnotationMeta>['renderAnnotation']>>(
+    (annotation) => {
+      const meta = annotation.metadata;
+      if (meta.kind === 'draft') {
+        return draft ? (
+          <CommentComposer
+            draft={draft}
+            onClose={closeDraft}
+          />
+        ) : null;
+      }
+      const comment = fileComments.find((entry) => entry.id === meta.id);
+      return comment ? <CommentThread comment={comment} /> : null;
+    },
+    [
+      draft,
+      closeDraft,
+      fileComments,
+    ],
+  );
+
+  const diffOptions = useMemo<FileDiffProps<AnnotationMeta>['options']>(
+    () => ({
+      diffStyle,
+      theme: {
+        dark: 'pierre-dark',
+        light: 'pierre-light',
+      },
+      themeType: 'dark',
+      enableLineSelection: true,
+      controlledSelection: true,
+      lineHoverHighlight: 'both',
+      enableGutterUtility: true,
+      // Drag-select (lib) feeds our selection; record the anchor so a later
+      // shift-click / Shift+J/K extends from the drag's start.
+      onLineSelectionChange: (range) => setSelectedLines(range),
+      onLineSelected: (range) => {
+        setSelectedLines(range);
+        if (range) {
+          anchorRef.current = {
+            line: range.start,
+            side: (range.side ?? 'additions') as AnnotationSide,
+          };
+        }
+      },
+      // Click selects just that line; shift-click extends from the anchor.
+      onLineClick: (props) => {
+        const anchor = anchorRef.current;
+        if (props.event.shiftKey && anchor) {
+          setSelectedLines({
+            start: anchor.line,
+            side: anchor.side,
+            end: props.lineNumber,
+            endSide: props.annotationSide,
+          });
+        } else {
+          anchorRef.current = {
+            line: props.lineNumber,
+            side: props.annotationSide,
+          };
+          setSelectedLines({
+            start: props.lineNumber,
+            end: props.lineNumber,
+            side: props.annotationSide,
+            endSide: props.annotationSide,
+          });
+        }
+      },
+      // Track the hovered line (anchor for a pointer drag); while dragging,
+      // extend the selection to the line under the pointer.
+      onLineEnter: (props) => {
+        hoveredLineRef.current = {
+          line: props.lineNumber,
+          side: props.annotationSide,
+        };
+        if (draggingRef.current && anchorRef.current) {
+          setSelectedLines({
+            start: anchorRef.current.line,
+            side: anchorRef.current.side,
+            end: props.lineNumber,
+            endSide: props.annotationSide,
+          });
+        }
+      },
+      onLineLeave: () => {
+        hoveredLineRef.current = null;
+      },
+      // The gutter "+" gives the clicked line. If a multi-line selection is
+      // active and covers that line, comment on the whole selection.
+      onGutterUtilityClick: (range) => {
+        const selection = useReviewStore.getState().selectedLines;
+        if (selection && selection.end !== selection.start) {
+          const lo = Math.min(selection.start, selection.end);
+          const hi = Math.max(selection.start, selection.end);
+          if (range.start >= lo && range.start <= hi) {
+            commentOnRange(filePath, selection);
+            return;
+          }
+        }
+        commentOnRange(filePath, range);
+      },
+    }),
+    [
+      diffStyle,
+      filePath,
+      setSelectedLines,
+      commentOnRange,
+    ],
+  );
 
   // Keyboard navigation in the diff:
   //   j/k        move the cursor one stop; collapsed "N unmodified lines" bars
@@ -406,6 +577,11 @@ export function DiffPane() {
         const endSide = (selection.endSide ?? selection.side ?? 'additions') as AnnotationSide;
         cursor = stopIndexForSelection(stops, selection.end, endSide);
         if (cursor === -1) {
+          // Not a modeled row — a line revealed by expanding a bar resolves to
+          // that bar's gap stop; anything else falls back to the nearest stop.
+          cursor = gapIndexForLine(stops, selection.end, endSide);
+        }
+        if (cursor === -1) {
           cursor = nearestLineStop(stops, selection.end);
         }
       }
@@ -465,6 +641,9 @@ export function DiffPane() {
       // (its element no longer renders) is skipped.
       let next = cursor + direction;
       while (stops[next] && stops[next].kind === 'gap' && stopElement(shadow, stops[next]) == null) {
+        navLog('skipping expanded-away bar', {
+          expandIndex: (stops[next] as GapStop).expandIndex,
+        });
         next += direction;
       }
       if (next < 0 || next >= stops.length) {
@@ -571,30 +750,6 @@ export function DiffPane() {
     );
   }
 
-  // Anchor annotations (and the draft composer) at the end of the range, so a
-  // multi-line comment appears just below the block it covers.
-  const annotations: DiffLineAnnotation<AnnotationMeta>[] = [
-    ...fileComments.map((comment) => ({
-      side: comment.endSide ?? comment.side,
-      lineNumber: comment.endLine ?? comment.line,
-      metadata: {
-        kind: 'comment' as const,
-        id: comment.id,
-      },
-    })),
-    ...(draft && draft.path === file.path
-      ? [
-          {
-            side: draft.endSide ?? draft.side,
-            lineNumber: draft.endLine ?? draft.line,
-            metadata: {
-              kind: 'draft' as const,
-            },
-          },
-        ]
-      : []),
-  ];
-
   return (
     <div
       ref={containerRef}
@@ -654,101 +809,10 @@ export function DiffPane() {
           <FileDiff<AnnotationMeta>
             key={`${file.path}:${file.staged ? 'staged' : 'unstaged'}`}
             fileDiff={fileDiff}
-            options={{
-              diffStyle,
-              theme: {
-                dark: 'pierre-dark',
-                light: 'pierre-light',
-              },
-              themeType: 'dark',
-              enableLineSelection: true,
-              controlledSelection: true,
-              lineHoverHighlight: 'both',
-              enableGutterUtility: true,
-              // Drag-select (lib) feeds our selection; record the anchor so a
-              // later shift-click / Shift+J/K extends from the drag's start.
-              onLineSelectionChange: (range) => setSelectedLines(range),
-              onLineSelected: (range) => {
-                setSelectedLines(range);
-                if (range) {
-                  anchorRef.current = {
-                    line: range.start,
-                    side: (range.side ?? 'additions') as AnnotationSide,
-                  };
-                }
-              },
-              // Click selects just that line; shift-click extends from the anchor.
-              onLineClick: (props) => {
-                const anchor = anchorRef.current;
-                if (props.event.shiftKey && anchor) {
-                  setSelectedLines({
-                    start: anchor.line,
-                    side: anchor.side,
-                    end: props.lineNumber,
-                    endSide: props.annotationSide,
-                  });
-                } else {
-                  anchorRef.current = {
-                    line: props.lineNumber,
-                    side: props.annotationSide,
-                  };
-                  setSelectedLines({
-                    start: props.lineNumber,
-                    end: props.lineNumber,
-                    side: props.annotationSide,
-                    endSide: props.annotationSide,
-                  });
-                }
-              },
-              // Track the hovered line (anchor for a pointer drag); while
-              // dragging, extend the selection to the line under the pointer.
-              onLineEnter: (props) => {
-                hoveredLineRef.current = {
-                  line: props.lineNumber,
-                  side: props.annotationSide,
-                };
-                if (draggingRef.current && anchorRef.current) {
-                  setSelectedLines({
-                    start: anchorRef.current.line,
-                    side: anchorRef.current.side,
-                    end: props.lineNumber,
-                    endSide: props.annotationSide,
-                  });
-                }
-              },
-              onLineLeave: () => {
-                hoveredLineRef.current = null;
-              },
-              // The gutter "+" gives the clicked line. If a multi-line selection
-              // is active and covers that line, comment on the whole selection.
-              onGutterUtilityClick: (range) => {
-                const selection = useReviewStore.getState().selectedLines;
-                if (selection && selection.end !== selection.start) {
-                  const lo = Math.min(selection.start, selection.end);
-                  const hi = Math.max(selection.start, selection.end);
-                  if (range.start >= lo && range.start <= hi) {
-                    commentOnRange(file.path, selection);
-                    return;
-                  }
-                }
-                commentOnRange(file.path, range);
-              },
-            }}
+            options={diffOptions}
             selectedLines={selectedLines}
             lineAnnotations={annotations}
-            renderAnnotation={(annotation) => {
-              const meta = annotation.metadata;
-              if (meta.kind === 'draft') {
-                return draft ? (
-                  <CommentComposer
-                    draft={draft}
-                    onClose={closeDraft}
-                  />
-                ) : null;
-              }
-              const comment = fileComments.find((entry) => entry.id === meta.id);
-              return comment ? <CommentThread comment={comment} /> : null;
-            }}
+            renderAnnotation={renderAnnotation}
             disableWorkerPool
           />
         </Virtualizer>
