@@ -5,7 +5,9 @@ import { addRecentProject } from './recent';
 import { createSupervisionRPC, getCurrentRepo } from './rpc';
 import { type WatchHandle, watchWorkingTree } from './watcher';
 
-const DEV_SERVER_PORT = 5173;
+// Overridable so parallel worktree sessions don't attach to each other's
+// Vite server (first one up owns 5173; others would load the wrong frontend).
+const DEV_SERVER_PORT = Number(process.env.SUPERVISION_HMR_PORT ?? 5173);
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 
 // Check if Vite dev server is running for HMR
@@ -58,14 +60,17 @@ const rpc = createSupervisionRPC({
   },
 });
 
+// Title/position are overridable for the same reason as the HMR port: with
+// parallel worktree sessions, identically titled windows stacked at the same
+// coordinates are impossible to tell apart (or click) reliably.
 const mainWindow = new BrowserWindow({
-  title: 'Supervision',
+  title: process.env.SUPERVISION_TITLE ?? 'Supervision',
   url,
   frame: {
     width: 1400,
     height: 900,
-    x: 100,
-    y: 100,
+    x: Number(process.env.SUPERVISION_FRAME_X ?? 100),
+    y: Number(process.env.SUPERVISION_FRAME_Y ?? 100),
   },
   rpc,
 });
