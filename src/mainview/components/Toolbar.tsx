@@ -11,6 +11,7 @@ import {
   CheckCheck,
   ClipboardCopy,
   Columns2,
+  FilePen,
   Pilcrow,
   RefreshCw,
   Undo2,
@@ -20,6 +21,7 @@ import { ContextMenu, Popover } from 'radix-ui';
 import { type ReactNode, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { FONT_SIZE_PRESETS } from '../../shared/config';
+import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
 import { Button } from './ui/button';
@@ -104,23 +106,21 @@ function FontSizeControl() {
   const setFontSize = useReviewStore((state) => state.setFontSize);
   const [open, setOpen] = useState(false);
 
-  const cycle = () => {
-    setFontSize(FONT_SIZE_PRESETS.find((size) => size > fontSize) ?? FONT_SIZE_PRESETS[0]);
-  };
+  const next = FONT_SIZE_PRESETS.find((size) => size > fontSize) ?? FONT_SIZE_PRESETS[0];
 
   return (
     <Popover.Root
       open={open}
       onOpenChange={setOpen}
     >
-      <Hint label={`Font size ${fontSize}px — click to cycle, right-click to fine-tune`}>
+      <Hint label={`${fontSize}px → ${next}px`}>
         <Popover.Anchor asChild>
           <Button
             variant="ghost"
             size="icon-lg"
             className={cn(CELL, open && 'bg-muted')}
             aria-label="Font size"
-            onClick={cycle}
+            onClick={() => setFontSize(next)}
             onContextMenu={(event) => {
               event.preventDefault();
               setOpen(true);
@@ -157,6 +157,7 @@ export function Toolbar() {
   const approve = useReviewStore((state) => state.approve);
   const unapprove = useReviewStore((state) => state.unapprove);
   const exportReview = useReviewStore((state) => state.exportReview);
+  const selectedLines = useReviewStore((state) => state.selectedLines);
   const loading = useReviewStore((state) => state.loading);
   const [exported, setExported] = useState(false);
 
@@ -223,6 +224,26 @@ export function Toolbar() {
           </ContextMenu.Portal>
         </ContextMenu.Root>
       ) : null}
+
+      <Hint label={file ? `Open ${file.path} in editor` : 'Open in editor'}>
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          className={CELL}
+          aria-label="Open in editor"
+          disabled={!file || file.status === 'deleted'}
+          onClick={() =>
+            file
+              ? void api.openInEditor({
+                  path: file.path,
+                  line: selectedLines?.end,
+                })
+              : undefined
+          }
+        >
+          <FilePen />
+        </Button>
+      </Hint>
 
       <Hint label={exported ? 'Copied!' : `Copy ${openComments} comment${openComments === 1 ? '' : 's'}`}>
         <Button

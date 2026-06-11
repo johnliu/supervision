@@ -118,6 +118,17 @@ export type SupervisionRPC = {
         params: undefined;
         response: string[];
       };
+      /** Open a repo file in the user's editor (optionally at a line). */
+      openInEditor: {
+        params: {
+          path: string;
+          line?: number;
+        };
+        response: {
+          ok: boolean;
+          error?: string;
+        };
+      };
       /** Install state of the Claude Code feedback skill (user-level). */
       getSkillStatus: {
         params: undefined;

@@ -276,6 +276,12 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       await wait();
       return recents();
     },
+    openInEditor: async () => {
+      await wait();
+      return {
+        ok: true,
+      };
+    },
     getSkillStatus: async () => {
       await wait();
       return {

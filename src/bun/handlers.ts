@@ -9,6 +9,7 @@ import type { SupervisionRPC } from '../shared/rpc';
 import type { SetRepoResult } from '../shared/types';
 import * as comments from './comments';
 import * as config from './config';
+import * as editor from './editor';
 import * as git from './git';
 import { resolveLaunchRepo } from './launchTarget';
 import * as recent from './recent';
@@ -138,6 +139,7 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
     getRecentProjects: async () => recent.readRecentProjects(),
     getSkillStatus: async () => skill.getSkillStatus(),
     installSkill: async () => skill.installSkill(),
+    openInEditor: async ({ path: relPath, line }) => editor.openInEditor(await repoRoot(), relPath, line),
   };
 
   return {
