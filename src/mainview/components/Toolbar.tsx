@@ -20,7 +20,8 @@ import {
 import { ContextMenu, Popover } from 'radix-ui';
 import { type ReactNode, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { FONT_SIZE_PRESETS } from '../../shared/config';
+import { EDITORS, FONT_SIZE_PRESETS } from '../../shared/config';
+import type { EditorId } from '../../shared/types';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
@@ -162,11 +163,14 @@ export function Toolbar() {
   const unapprove = useReviewStore((state) => state.unapprove);
   const exportReview = useReviewStore((state) => state.exportReview);
   const selectedLines = useReviewStore((state) => state.selectedLines);
+  const editorChoice = useReviewStore((state) => state.editor);
+  const setEditor = useReviewStore((state) => state.setEditor);
   const loading = useReviewStore((state) => state.loading);
   const [exported, setExported] = useState(false);
 
   const pendingPaths = model?.unreviewed.map((file) => file.path) ?? [];
   const openComments = comments.filter((comment) => comment.status === 'open').length;
+  const editorLabel = EDITORS.find((entry) => entry.id === editorChoice)?.label ?? 'editor';
 
   // The displayed entry for the selected file (mirrors DiffPane's choice):
   // the staged one only when the user flipped a both-bucket file to it.
@@ -242,25 +246,61 @@ export function Toolbar() {
         </ContextMenu.Root>
       ) : null}
 
-      <Hint label={file ? `Open ${file.path} in editor` : 'Open in editor'}>
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          className={CELL}
-          aria-label="Open in editor"
-          disabled={!file || file.status === 'deleted'}
-          onClick={() =>
+      <ContextMenu.Root onOpenChange={trackPopup}>
+        <Hint
+          label={
             file
-              ? void api.openInEditor({
-                  path: file.path,
-                  line: selectedLines?.end,
-                })
-              : undefined
+              ? editorChoice === 'open'
+                ? `Open ${file.path}`
+                : `Open ${file.path} in ${editorLabel}`
+              : 'Open in editor'
           }
         >
-          <FilePen />
-        </Button>
-      </Hint>
+          <ContextMenu.Trigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className={CELL}
+              aria-label="Open in editor"
+              disabled={!file || file.status === 'deleted'}
+              onClick={() =>
+                file
+                  ? void api.openInEditor({
+                      path: file.path,
+                      line: selectedLines?.end,
+                    })
+                  : undefined
+              }
+            >
+              <FilePen />
+            </Button>
+          </ContextMenu.Trigger>
+        </Hint>
+        <ContextMenu.Portal>
+          <ContextMenu.Content className={cn(POPUP, 'min-w-[11rem]')}>
+            <ContextMenu.Label className="px-2 py-1 text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
+              Open files with
+            </ContextMenu.Label>
+            <ContextMenu.RadioGroup
+              value={editorChoice}
+              onValueChange={(value) => setEditor(value as EditorId)}
+            >
+              {EDITORS.map((entry) => (
+                <ContextMenu.RadioItem
+                  key={entry.id}
+                  value={entry.id}
+                  className="relative flex cursor-pointer items-center rounded-md py-1.5 pr-2 pl-7 text-xs outline-none data-[highlighted]:bg-muted"
+                >
+                  <ContextMenu.ItemIndicator className="absolute left-2">
+                    <Check className="size-3.5" />
+                  </ContextMenu.ItemIndicator>
+                  {entry.label}
+                </ContextMenu.RadioItem>
+              ))}
+            </ContextMenu.RadioGroup>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
 
       <Hint label={exported ? 'Copied!' : `Copy ${openComments} comment${openComments === 1 ? '' : 's'}`}>
         <Button

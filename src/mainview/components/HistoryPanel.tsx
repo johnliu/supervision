@@ -117,10 +117,12 @@ export function HistoryPanel() {
         onClick={(event) => onRowClick(WORKING_ROW, event.shiftKey)}
         className={rowClasses(WORKING_ROW)}
       >
+        {/* Endpoint icons follow the highlighted row's foreground — an accent
+            color on top of the row highlight read as inconsistent. */}
         <FileDiff
           className={cn(
             'size-3.5 shrink-0',
-            spanStart === WORKING_ROW ? 'text-sidebar-primary' : 'text-muted-foreground',
+            spanStart === WORKING_ROW ? 'text-sidebar-accent-foreground' : 'text-muted-foreground',
           )}
         />
         <span className="flex min-w-0 flex-col">
@@ -141,7 +143,10 @@ export function HistoryPanel() {
               className={rowClasses(index)}
             >
               <GitCommitVertical
-                className={cn('size-3.5 shrink-0', isEndpoint ? 'text-sidebar-primary' : 'text-muted-foreground')}
+                className={cn(
+                  'size-3.5 shrink-0',
+                  isEndpoint ? 'text-sidebar-accent-foreground' : 'text-muted-foreground',
+                )}
               />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-xs">{commit.subject}</span>
