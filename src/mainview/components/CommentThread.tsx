@@ -4,7 +4,7 @@
 //
 // Both cards cap their width: 36rem for a readable measure, and never closer
 // than ~88px to their container's right edge — the strip the floating toolbar
-// (size-9 cells + p-1.5 + right-4) occupies — so the bar never covers them.
+// (size-9 cells + p-1.5 + right-6) occupies — so the bar never covers them.
 
 import { useState } from 'react';
 import type { Comment } from '../../shared/types';

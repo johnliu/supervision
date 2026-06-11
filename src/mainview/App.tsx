@@ -43,18 +43,23 @@ export default function App() {
     return () => document.removeEventListener('contextmenu', onContextMenu);
   }, []);
 
+  // Modern macOS shell: the window background is the sidebar surface (the
+  // titlebar/traffic lights float over it), and the working area is an inset
+  // rounded card — the Messages/Claude layout.
   return (
     <TooltipProvider>
-      <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-        {error ? (
-          <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive [.platform-desktop_&]:pt-9">
-            {error}
-          </div>
-        ) : null}
-        <div className="flex min-h-0 flex-1">
-          <Sidebar />
-          <div className="min-w-0 flex-1">
-            <DiffPane />
+      <div className="relative flex h-screen w-screen overflow-hidden bg-sidebar text-foreground">
+        <Sidebar />
+        <div className="min-w-0 flex-1 p-2 pl-0">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+            {error ? (
+              <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+                {error}
+              </div>
+            ) : null}
+            <div className="min-h-0 flex-1">
+              <DiffPane />
+            </div>
           </div>
         </div>
         <Toolbar />

@@ -209,38 +209,45 @@ function compareLabel(compare: CompareSpec, log: CommitInfo[]): string {
   }
 }
 
-// Project switcher plus the identity lines the footer owes the user: which
-// worktree/branch is under review, and what the diff is being compared to.
+function FooterLine({ icon, text, title }: { icon: ReactNode; text: string; title?: string }) {
+  return (
+    <div
+      className="flex items-center gap-1.5 px-1.5 text-[0.65rem] text-muted-foreground"
+      title={title}
+    >
+      {icon}
+      <span className="truncate">{text}</span>
+    </div>
+  );
+}
+
+// The identity stack, broadest scope first: Project > Worktree > Branch, then
+// what the diff is being compared to. The main checkout reads as "main".
 function SidebarFooter() {
   const repoInfo = useReviewStore((state) => state.repoInfo);
   const compare = useReviewStore((state) => state.compare);
   const log = useReviewStore((state) => state.log);
 
-  const branchLine = repoInfo
-    ? [
-        repoInfo.worktree,
-        repoInfo.branch,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : '';
-
   return (
     <div className="flex shrink-0 flex-col gap-1 border-t border-sidebar-border p-2">
       <ProjectSwitcher />
-      {branchLine ? (
-        <div
-          className="flex items-center gap-1.5 px-1.5 text-[0.65rem] text-muted-foreground"
-          title={repoInfo?.root}
-        >
-          <GitBranch className="size-3 shrink-0" />
-          <span className="truncate">{branchLine}</span>
-        </div>
+      {repoInfo ? (
+        <FooterLine
+          icon={<FolderTree className="size-3 shrink-0" />}
+          text={repoInfo.worktree ?? 'main'}
+          title={repoInfo.root}
+        />
       ) : null}
-      <div className="flex items-center gap-1.5 px-1.5 text-[0.65rem] text-muted-foreground">
-        <GitCompareArrows className="size-3 shrink-0" />
-        <span className="truncate">{compareLabel(compare, log)}</span>
-      </div>
+      {repoInfo?.branch ? (
+        <FooterLine
+          icon={<GitBranch className="size-3 shrink-0" />}
+          text={repoInfo.branch}
+        />
+      ) : null}
+      <FooterLine
+        icon={<GitCompareArrows className="size-3 shrink-0" />}
+        text={compareLabel(compare, log)}
+      />
     </div>
   );
 }
@@ -305,7 +312,9 @@ export function Sidebar() {
 
   return (
     <div
-      className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
+      // The window background IS the sidebar surface (inset-card shell), so
+      // the sidebar itself paints nothing and needs no dividing border.
+      className="flex h-full w-72 shrink-0 flex-col text-sidebar-foreground"
       style={TREE_STYLE}
     >
       {/* Desktop: start below the hiddenInset traffic lights. */}

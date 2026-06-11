@@ -180,7 +180,7 @@ export function Toolbar() {
   };
 
   return (
-    <div className="absolute top-1/2 right-4 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-2xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
+    <div className="absolute top-1/2 right-6 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-2xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
       {working ? (
         <ContextMenu.Root>
           <Hint label={file?.staged ? `Unapprove ${file.path}` : `Approve ${file?.path ?? 'file'}`}>
