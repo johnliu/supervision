@@ -3,7 +3,7 @@ import type { ElectrobunConfig } from 'electrobun';
 export default {
   app: {
     name: 'Supervision',
-    identifier: 'supervision.electrobun.dev',
+    identifier: 'supervision.johnliu.me',
     version: '0.0.1',
   },
   build: {
