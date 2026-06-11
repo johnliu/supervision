@@ -5,15 +5,6 @@ pieces it touches so it can be picked up cleanly.
 
 ## Up next
 
-- **Theme support.** The palette already flows through CSS custom properties
-  (`index.css`), the tree restyles via `--trees-*-override` (`Sidebar.tsx`),
-  and the diff takes a theme pair (`THEME` in `DiffPane.tsx`, currently pinned
-  `themeType: 'dark'`). Theme = a `SupervisionConfig` field (`'dark' | 'light'
-  | 'system'`) driving: a class on `<html>` for the app palette, `themeType`
-  for the diff, and `themeToTreeStyles({ type })` for the tree. `system`
-  listens to `prefers-color-scheme`. The settings dialog gets a three-way
-  toggle group.
-
 - **Worktree & branch support.** The footer now *names* the worktree and
   branch (`getRepoInfo`); the next step is switching, not just showing. Shape:
   `git worktree list --porcelain` + `git branch --list` behind one RPC; the

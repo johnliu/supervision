@@ -41,7 +41,7 @@ export function ProjectSwitcher() {
         <DropdownMenu.Content
           align="start"
           sideOffset={6}
-          className="dark z-50 max-w-[24rem] min-w-[16rem] overflow-hidden rounded-lg bg-popover/95 p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+          className="z-50 max-w-[24rem] min-w-[16rem] overflow-hidden rounded-lg bg-popover/95 p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
         >
           {current ? (
             <>

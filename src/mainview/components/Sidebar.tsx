@@ -21,7 +21,7 @@ import { ChevronRight, FolderTree, GitBranch, GitCompareArrows, History, Message
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { CommitInfo, CompareSpec, FileChange } from '../../shared/types';
-import { useReviewStore } from '../store';
+import { resolveThemeType, useReviewStore } from '../store';
 import { CommentsPanel } from './CommentsPanel';
 import { HistoryPanel } from './HistoryPanel';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -29,13 +29,11 @@ import { ProjectSwitcher } from './ProjectSwitcher';
 // Matches @pierre/trees' default density itemHeight (model/density.ts).
 const ITEM_HEIGHT = 30;
 
-// A dark base derived from a theme object, plus explicit `--trees-*-override`
-// colors (highest precedence). Custom properties inherit across the shadow
-// boundary, so setting them on the container themes every tree inside it.
-const TREE_STYLE = {
-  ...themeToTreeStyles({
-    type: 'dark',
-  }),
+// Explicit `--trees-*-override` colors (highest precedence) — app CSS custom
+// properties, so they follow the active palette on their own. Custom
+// properties inherit across the shadow boundary, so setting them on the
+// container themes every tree inside it.
+const TREE_OVERRIDES = {
   '--trees-bg-override': 'transparent',
   '--trees-bg-muted-override': 'var(--sidebar-accent)',
   '--trees-fg-override': 'var(--sidebar-foreground)',
@@ -52,7 +50,23 @@ const TREE_STYLE = {
   '--trees-git-renamed-color-override': '#3b82f6',
   '--trees-git-untracked-color-override': '#10b981',
   '--trees-git-ignored-color-override': 'var(--muted-foreground)',
-} as unknown as CSSProperties;
+};
+
+// A base derived from a theme object per palette, with the overrides on top.
+const TREE_STYLES: Record<'dark' | 'light', CSSProperties> = {
+  dark: {
+    ...themeToTreeStyles({
+      type: 'dark',
+    }),
+    ...TREE_OVERRIDES,
+  } as unknown as CSSProperties,
+  light: {
+    ...themeToTreeStyles({
+      type: 'light',
+    }),
+    ...TREE_OVERRIDES,
+  } as unknown as CSSProperties,
+};
 
 // Rows a fully-expanded tree renders: every file plus each distinct ancestor
 // directory (matches flattenEmptyDirectories: false + initialExpansion: 'open').
@@ -309,13 +323,14 @@ function FilesPanel() {
 
 export function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('files');
+  const themeType = useReviewStore((state) => resolveThemeType(state.theme, state.systemDark));
 
   return (
     <div
       // The window background IS the sidebar surface (inset-card shell), so
       // the sidebar itself paints nothing and needs no dividing border.
       className="flex h-full w-72 shrink-0 flex-col text-sidebar-foreground"
-      style={TREE_STYLE}
+      style={TREE_STYLES[themeType]}
     >
       {/* Desktop: start below the hiddenInset traffic lights. */}
       <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-1 [.platform-desktop_&]:mt-9">

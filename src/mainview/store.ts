@@ -10,11 +10,14 @@ import type {
   Comment,
   CommitInfo,
   CompareSpec,
+  DiffThemeId,
   EditorId,
   FileChange,
+  PaletteId,
   RepoInfo,
   ReviewModel,
   SetRepoResult,
+  ThemePreference,
 } from '../shared/types';
 import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './platform';
 
@@ -66,6 +69,14 @@ interface ReviewState {
   fontSize: number;
   /** Where "Open in editor" sends files. */
   editor: EditorId;
+  /** Persisted theme preference ('system' follows the OS). */
+  theme: ThemePreference;
+  /** shadcn base-color family tinting every gray in the UI. */
+  palette: PaletteId;
+  /** Shiki theme pair the diff highlights with. */
+  diffTheme: DiffThemeId;
+  /** Live prefers-color-scheme value, kept current by App's media listener. */
+  systemDark: boolean;
   /** Recently-opened repo roots, newest first (for the project switcher). */
   recentProjects: string[];
   /** Recent commits, newest first (the sidebar history tab). */
@@ -99,6 +110,10 @@ interface ReviewState {
   setLineWrap: (value: boolean) => void;
   setFontSize: (size: number) => void;
   setEditor: (editor: EditorId) => void;
+  setTheme: (theme: ThemePreference) => void;
+  setPalette: (palette: PaletteId) => void;
+  setDiffTheme: (diffTheme: DiffThemeId) => void;
+  setSystemDark: (dark: boolean) => void;
   setSettings: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
   setCompare: (compare: CompareSpec) => Promise<void>;
@@ -174,6 +189,14 @@ function compareTreePaths(a: string, b: string): number {
   return aSegments.length - bSegments.length;
 }
 
+/** The concrete palette a preference resolves to ('system' → the OS value). */
+export function resolveThemeType(theme: ThemePreference, systemDark: boolean): 'dark' | 'light' {
+  if (theme === 'system') {
+    return systemDark ? 'dark' : 'light';
+  }
+  return theme;
+}
+
 /** Files in sidebar display order: unstaged section first, then staged. */
 function orderedPaths(model: ReviewModel): string[] {
   const sorted = (files: FileChange[]) => files.map((file) => file.path).sort(compareTreePaths);
@@ -225,6 +248,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       lineWrap: get().lineWrap,
       fontSize: get().fontSize,
       editor: get().editor,
+      theme: get().theme,
+      palette: get().palette,
+      diffTheme: get().diffTheme,
     });
   };
 
@@ -259,6 +285,11 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     lineWrap: CONFIG_DEFAULTS.lineWrap,
     fontSize: CONFIG_DEFAULTS.fontSize,
     editor: CONFIG_DEFAULTS.editor,
+    theme: CONFIG_DEFAULTS.theme,
+    palette: CONFIG_DEFAULTS.palette,
+    diffTheme: CONFIG_DEFAULTS.diffTheme,
+    // Seeded from matchMedia; App's effect keeps it tracking the OS.
+    systemDark: globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true,
     recentProjects: [],
     log: [],
     repoInfo: null,
@@ -431,6 +462,33 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       persistConfig();
     },
 
+    setTheme: (theme) => {
+      set({
+        theme,
+      });
+      persistConfig();
+    },
+
+    setPalette: (palette) => {
+      set({
+        palette,
+      });
+      persistConfig();
+    },
+
+    setDiffTheme: (diffTheme) => {
+      set({
+        diffTheme,
+      });
+      persistConfig();
+    },
+
+    setSystemDark: (dark) => {
+      set({
+        systemDark: dark,
+      });
+    },
+
     setSettings: (open) => {
       set({
         settings: open,
@@ -452,6 +510,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           lineWrap: loaded.lineWrap,
           fontSize: loaded.fontSize,
           editor: loaded.editor,
+          theme: loaded.theme,
+          palette: loaded.palette,
+          diffTheme: loaded.diffTheme,
         });
       } catch (error) {
         console.error('Failed to load config', error);

@@ -260,8 +260,8 @@ export function ShortcutsDialog() {
       onOpenChange={setShortcuts}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="dark fixed inset-0 z-50 bg-black/40 backdrop-blur-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <Dialog.Content className="dark fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[44rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-popover/95 p-5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[44rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-popover/95 p-5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="flex items-start justify-between">
             <div>
               <Dialog.Title className="text-sm font-semibold">Keyboard Shortcuts</Dialog.Title>

@@ -40,8 +40,9 @@ import {
 } from '@pierre/diffs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { AnnotationSide } from '../../shared/types';
-import { useReviewStore } from '../store';
+import { DIFF_THEMES } from '../../shared/config';
+import type { AnnotationSide, DiffThemeId } from '../../shared/types';
+import { resolveThemeType, useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
 import {
   buildNavStops,
@@ -85,10 +86,20 @@ const NAV_MARGIN = 40;
 // don't override) so our nav model and the renderer reveal the same lines.
 const EXPANSION_LINE_COUNT = 100;
 
-const THEME = {
-  dark: 'pierre-dark',
-  light: 'pierre-light',
-} as const;
+// Shiki theme pair per DiffThemeId — the configured entry feeds CodeView's
+// `theme` and the active palette ('dark'/'light') picks the side.
+const DIFF_THEME_PAIRS = Object.fromEntries(
+  DIFF_THEMES.map((entry) => [
+    entry.id,
+    entry.themes,
+  ]),
+) as Record<
+  DiffThemeId,
+  {
+    dark: string;
+    light: string;
+  }
+>;
 
 // Zero out CodeView's outer padding/gap so a stop's scroll-space position is
 // exactly itemTop + getLinePosition().top (the visibility math below relies
@@ -281,6 +292,8 @@ export function DiffPane() {
   const ignoreWhitespace = useReviewStore((state) => state.ignoreWhitespace);
   const lineWrap = useReviewStore((state) => state.lineWrap);
   const fontSize = useReviewStore((state) => state.fontSize);
+  const themeType = useReviewStore((state) => resolveThemeType(state.theme, state.systemDark));
+  const diffTheme = useReviewStore((state) => state.diffTheme);
   const selectedLines = useReviewStore((state) => state.selectedLines);
   const setSelectedLines = useReviewStore((state) => state.setSelectedLines);
   const draft = useReviewStore((state) => state.draft);
@@ -730,8 +743,8 @@ export function DiffPane() {
     () => ({
       diffStyle,
       overflow: lineWrap ? 'wrap' : 'scroll',
-      theme: THEME,
-      themeType: 'dark',
+      theme: DIFF_THEME_PAIRS[diffTheme],
+      themeType,
       layout: LAYOUT,
       enableLineSelection: true,
       lineHoverHighlight: 'both',
@@ -841,6 +854,8 @@ export function DiffPane() {
     [
       diffStyle,
       lineWrap,
+      themeType,
+      diffTheme,
       filePath,
       setSelectedLines,
       commentOnRange,

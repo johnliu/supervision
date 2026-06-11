@@ -262,6 +262,9 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
         config.lineWrap = input.lineWrap;
         config.fontSize = input.fontSize;
         config.editor = input.editor;
+        config.theme = input.theme;
+        config.palette = input.palette;
+        config.diffTheme = input.diffTheme;
       }
       return {
         ...config,

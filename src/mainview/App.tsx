@@ -7,13 +7,17 @@ import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { useReviewStore } from './store';
+import { resolveThemeType, useReviewStore } from './store';
 
 export default function App() {
   const refresh = useReviewStore((state) => state.refresh);
   const hydrateConfig = useReviewStore((state) => state.hydrateConfig);
   const loadRecentProjects = useReviewStore((state) => state.loadRecentProjects);
   const error = useReviewStore((state) => state.error);
+  const theme = useReviewStore((state) => state.theme);
+  const palette = useReviewStore((state) => state.palette);
+  const systemDark = useReviewStore((state) => state.systemDark);
+  const setSystemDark = useReviewStore((state) => state.setSystemDark);
 
   useKeyboardShortcuts();
 
@@ -25,6 +29,38 @@ export default function App() {
     hydrateConfig,
     loadRecentProjects,
     refresh,
+  ]);
+
+  // Track the OS appearance so a 'system' preference follows it live.
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemDark(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [
+    setSystemDark,
+  ]);
+
+  // The `dark` class on <html> drives the whole app palette (index.css).
+  // index.html ships with it pre-set so the first dark paint doesn't flash.
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', resolveThemeType(theme, systemDark) === 'dark');
+  }, [
+    theme,
+    systemDark,
+  ]);
+
+  // data-palette swaps the gray family's hue/chroma knobs (index.css).
+  // Olive is the stock palette — no attribute.
+  useEffect(() => {
+    if (palette === 'olive') {
+      delete document.documentElement.dataset.palette;
+    } else {
+      document.documentElement.dataset.palette = palette;
+    }
+  }, [
+    palette,
   ]);
 
   // Suppress the webview's default context menu (Reload / Inspect Element…).

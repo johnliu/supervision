@@ -2,11 +2,12 @@
 // to .supervision/config.json; opened from Supervision ▸ Settings… (Cmd+,).
 // The controls share store state with the toolbar, so the two stay in sync.
 
-import { AlignJustify, Columns2, X } from 'lucide-react';
+import { AlignJustify, Columns2, Moon, Sun, SunMoon, X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
 import { useEffect, useState } from 'react';
-import { EDITORS } from '../../shared/config';
-import type { EditorId, SkillStatus } from '../../shared/types';
+import { cn } from '@/lib/utils';
+import { DIFF_THEMES, EDITORS, PALETTES, THEMES } from '../../shared/config';
+import type { DiffThemeId, EditorId, SkillStatus, ThemePreference } from '../../shared/types';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
@@ -100,6 +101,12 @@ export function SettingsDialog() {
   const setLineWrap = useReviewStore((state) => state.setLineWrap);
   const editor = useReviewStore((state) => state.editor);
   const setEditor = useReviewStore((state) => state.setEditor);
+  const theme = useReviewStore((state) => state.theme);
+  const setTheme = useReviewStore((state) => state.setTheme);
+  const palette = useReviewStore((state) => state.palette);
+  const setPalette = useReviewStore((state) => state.setPalette);
+  const diffTheme = useReviewStore((state) => state.diffTheme);
+  const setDiffTheme = useReviewStore((state) => state.setDiffTheme);
 
   return (
     <Dialog.Root
@@ -107,8 +114,8 @@ export function SettingsDialog() {
       onOpenChange={setSettings}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="dark fixed inset-0 z-50 bg-black/40 backdrop-blur-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <Dialog.Content className="dark fixed top-1/2 left-1/2 z-50 w-[28rem] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover/95 p-5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[28rem] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover/95 p-5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="flex items-start justify-between">
             <div>
               <Dialog.Title className="text-sm font-semibold">Settings</Dialog.Title>
@@ -122,6 +129,88 @@ export function SettingsDialog() {
           </div>
 
           <div className="mt-4 space-y-4">
+            <Row
+              title="Theme"
+              description="App, diff, and tree palette."
+            >
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                value={theme}
+                onValueChange={(value) => {
+                  if (THEMES.some((entry) => entry.id === value)) {
+                    setTheme(value as ThemePreference);
+                  }
+                }}
+              >
+                {THEMES.map((entry) => (
+                  <ToggleGroupItem
+                    key={entry.id}
+                    value={entry.id}
+                    aria-label={entry.label}
+                  >
+                    {entry.id === 'system' ? <SunMoon /> : entry.id === 'light' ? <Sun /> : <Moon />}
+                    {entry.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </Row>
+
+            <Row
+              title="Base color"
+              description="The gray family behind the UI."
+            >
+              <div className="flex items-center gap-1.5">
+                {PALETTES.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-label={entry.label}
+                    title={entry.label}
+                    onClick={() => setPalette(entry.id)}
+                    className={cn(
+                      'size-5 rounded-full transition-shadow',
+                      palette === entry.id
+                        ? 'ring-2 ring-ring ring-offset-2 ring-offset-popover'
+                        : 'hover:ring-2 hover:ring-ring/40 hover:ring-offset-1 hover:ring-offset-popover',
+                    )}
+                    style={{
+                      backgroundColor: entry.swatch,
+                    }}
+                  />
+                ))}
+              </div>
+            </Row>
+
+            <Row
+              title="Syntax theme"
+              description="Diff highlighting palette."
+            >
+              <Select
+                value={diffTheme}
+                onValueChange={(value) => setDiffTheme(value as DiffThemeId)}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-40"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DIFF_THEMES.map((entry) => (
+                    <SelectItem
+                      key={entry.id}
+                      value={entry.id}
+                    >
+                      {entry.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Row>
+
             <Row
               title="Diff view"
               description="Side-by-side or inline."

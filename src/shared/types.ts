@@ -140,6 +140,25 @@ export interface CommentsFile {
 /** Editors "Open in editor" can target (see EDITORS in shared/config.ts). */
 export type EditorId = 'open' | 'cursor' | 'code' | 'zed' | 'subl';
 
+/** Theme preference; 'system' follows the OS via prefers-color-scheme. */
+export type ThemePreference = 'dark' | 'light' | 'system';
+
+/** shadcn base-color family for the UI's grays (see PALETTES in
+ * shared/config.ts). 'olive' is the app's original warm-green tint. */
+export type PaletteId = 'olive' | 'stone' | 'zinc' | 'gray' | 'slate' | 'neutral';
+
+/** Syntax-highlighting theme pair for the diff (see DIFF_THEMES). */
+export type DiffThemeId =
+  | 'pierre'
+  | 'pierre-soft'
+  | 'github'
+  | 'one'
+  | 'catppuccin'
+  | 'vitesse'
+  | 'solarized'
+  | 'gruvbox'
+  | 'everforest';
+
 /** User preferences persisted to `.supervision/config.json`. */
 export interface SupervisionConfig {
   diffStyle: 'split' | 'unified';
@@ -150,6 +169,12 @@ export interface SupervisionConfig {
   fontSize: number;
   /** Where "Open in editor" sends files ('open' = system default app). */
   editor: EditorId;
+  /** App palette + diff theme + tree theme, applied together. */
+  theme: ThemePreference;
+  /** shadcn base-color family tinting every gray in the UI. */
+  palette: PaletteId;
+  /** Shiki theme pair the diff highlights with (dark/light per `theme`). */
+  diffTheme: DiffThemeId;
 }
 
 /**
