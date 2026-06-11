@@ -1,7 +1,8 @@
-// Floating vertical toolbar on the right edge, Figma-style: view mode as a
-// sliding segmented group, wrap toggle, font-size popover, then the review
-// actions (approve file, approve all, copy-for-LLM, refresh). Repo selection
-// lives in the sidebar footer; settings opens from the app menu (Cmd+,).
+// Floating vertical toolbar on the right edge, Figma-style, in three groups:
+// review actions (approve file — right-click for approve-all — and
+// copy-for-LLM), view options (split/unified segmented slide, wrap,
+// whitespace, font size), then refresh. Repo selection lives in the sidebar
+// footer; settings opens from the app menu (Cmd+,).
 
 import {
   ALargeSmall,
@@ -15,9 +16,10 @@ import {
   Undo2,
   WrapText,
 } from 'lucide-react';
-import { Popover } from 'radix-ui';
+import { ContextMenu, Popover } from 'radix-ui';
 import { type ReactNode, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { FONT_SIZE_PRESETS } from '../../shared/config';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
 import { Button } from './ui/button';
@@ -26,6 +28,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 // One square cell in the bar; icons get the larger Figma-ish optical size.
 const CELL = "size-9 [&_svg:not([class*='size-'])]:size-[18px]";
+
+// Shared chrome for the bar's popups (context menu, font-size popover).
+const POPUP =
+  'dark z-50 rounded-lg bg-popover/95 p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0';
 
 /** Wraps a control in a tooltip opening away from the right-edge bar. */
 function Hint({ label, children }: { label: string; children: ReactNode }) {
@@ -90,30 +96,45 @@ function ViewToggle() {
   );
 }
 
-// Font size pops out a stepper rather than living inline — a number plus two
-// buttons is too wide for a one-cell-wide bar.
+// Font size: clicking cycles the standard presets; right-clicking opens a
+// stepper to fine-tune pixel by pixel. The button is a Popover.Anchor (not a
+// Trigger) so the cycle click never doubles as a popover toggle.
 function FontSizeControl() {
   const fontSize = useReviewStore((state) => state.fontSize);
+  const setFontSize = useReviewStore((state) => state.setFontSize);
+  const [open, setOpen] = useState(false);
+
+  const cycle = () => {
+    setFontSize(FONT_SIZE_PRESETS.find((size) => size > fontSize) ?? FONT_SIZE_PRESETS[0]);
+  };
 
   return (
-    <Popover.Root>
-      <Hint label={`Font size (${fontSize}px)`}>
-        <Popover.Trigger asChild>
+    <Popover.Root
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <Hint label={`Font size ${fontSize}px — click to cycle, right-click to fine-tune`}>
+        <Popover.Anchor asChild>
           <Button
             variant="ghost"
             size="icon-lg"
-            className={cn(CELL, 'aria-expanded:bg-muted')}
+            className={cn(CELL, open && 'bg-muted')}
             aria-label="Font size"
+            onClick={cycle}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setOpen(true);
+            }}
           >
             <ALargeSmall />
           </Button>
-        </Popover.Trigger>
+        </Popover.Anchor>
       </Hint>
       <Popover.Portal>
         <Popover.Content
           side="left"
           sideOffset={10}
-          className="dark z-50 rounded-lg bg-popover/95 p-2 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+          className={cn(POPUP, 'p-2')}
         >
           <FontSizeStepper />
         </Popover.Content>
@@ -160,6 +181,69 @@ export function Toolbar() {
 
   return (
     <div className="absolute top-1/2 right-4 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-2xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
+      {working ? (
+        <ContextMenu.Root>
+          <Hint label={file?.staged ? `Unapprove ${file.path}` : `Approve ${file?.path ?? 'file'}`}>
+            <ContextMenu.Trigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-lg"
+                className={CELL}
+                aria-label={file?.staged ? 'Unapprove file' : 'Approve file'}
+                disabled={!file}
+                onClick={() =>
+                  file
+                    ? file.staged
+                      ? unapprove([
+                          file.path,
+                        ])
+                      : approve([
+                          file.path,
+                        ])
+                    : undefined
+                }
+              >
+                {file?.staged ? <Undo2 /> : <Check />}
+              </Button>
+            </ContextMenu.Trigger>
+          </Hint>
+          <ContextMenu.Portal>
+            <ContextMenu.Content className={cn(POPUP, 'min-w-[12rem]')}>
+              <ContextMenu.Item
+                disabled={pendingPaths.length === 0}
+                onSelect={() => approve(pendingPaths)}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs outline-none data-[disabled]:cursor-default data-[disabled]:opacity-50 data-[highlighted]:bg-muted"
+              >
+                <CheckCheck className="size-3.5 shrink-0" />
+                <span>
+                  Approve all {pendingPaths.length} file{pendingPaths.length === 1 ? '' : 's'}
+                </span>
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        </ContextMenu.Root>
+      ) : null}
+
+      <Hint label={exported ? 'Copied!' : `Copy ${openComments} open comment${openComments === 1 ? '' : 's'} for LLM`}>
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          className={cn(CELL, 'relative')}
+          aria-label="Copy comments for LLM"
+          disabled={openComments === 0}
+          onClick={onExport}
+        >
+          <ClipboardCopy />
+          {openComments > 0 ? (
+            <span className="absolute top-0 right-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5rem] font-semibold text-primary-foreground">
+              {openComments}
+            </span>
+          ) : null}
+        </Button>
+      </Hint>
+
+      <div className="my-0.5 h-px w-6 shrink-0 bg-border" />
+
       <ViewToggle />
 
       <Hint label={lineWrap ? 'Wrapping long lines' : 'Scrolling long lines'}>
@@ -187,64 +271,6 @@ export function Toolbar() {
       <FontSizeControl />
 
       <div className="my-0.5 h-px w-6 shrink-0 bg-border" />
-
-      {working ? (
-        <Hint label={file?.staged ? `Unapprove ${file.path}` : `Approve ${file?.path ?? 'file'}`}>
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            className={CELL}
-            aria-label={file?.staged ? 'Unapprove file' : 'Approve file'}
-            disabled={!file}
-            onClick={() =>
-              file
-                ? file.staged
-                  ? unapprove([
-                      file.path,
-                    ])
-                  : approve([
-                      file.path,
-                    ])
-                : undefined
-            }
-          >
-            {file?.staged ? <Undo2 /> : <Check />}
-          </Button>
-        </Hint>
-      ) : null}
-
-      {working ? (
-        <Hint label={`Approve all ${pendingPaths.length} unstaged file${pendingPaths.length === 1 ? '' : 's'}`}>
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            className={CELL}
-            aria-label="Approve all unstaged files"
-            disabled={pendingPaths.length === 0}
-            onClick={() => approve(pendingPaths)}
-          >
-            <CheckCheck />
-          </Button>
-        </Hint>
-      ) : null}
-
-      <Hint label={exported ? 'Copied!' : `Copy ${openComments} open comment${openComments === 1 ? '' : 's'} for LLM`}>
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          className={cn(CELL, 'relative')}
-          aria-label="Copy comments for LLM"
-          disabled={openComments === 0}
-          onClick={onExport}
-        >
-          <ClipboardCopy />
-          {openComments > 0 ? (
-            <span className="absolute top-0 right-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5rem] font-semibold text-primary-foreground">
-              {openComments}
-            </span>
-          ) : null}
-        </Button>
-      </Hint>
 
       <Hint label="Refresh">
         <Button
