@@ -205,17 +205,17 @@ const TABS: Array<{
   {
     id: 'files',
     label: 'Files',
-    icon: <FolderTree className="size-3 shrink-0" />,
+    icon: <FolderTree className="size-3.5 shrink-0" />,
   },
   {
     id: 'history',
     label: 'History',
-    icon: <History className="size-3 shrink-0" />,
+    icon: <History className="size-3.5 shrink-0" />,
   },
   {
     id: 'comments',
     label: 'Comments',
-    icon: <MessageSquare className="size-3 shrink-0" />,
+    icon: <MessageSquare className="size-3.5 shrink-0" />,
   },
 ];
 
@@ -258,14 +258,14 @@ export function Sidebar() {
       className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
       style={TREE_STYLE}
     >
-      <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-0.5">
+      <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-1">
         {TABS.map((entry) => (
           <button
             key={entry.id}
             type="button"
             onClick={() => setTab(entry.id)}
             className={cn(
-              'flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[0.7rem] font-medium transition-colors',
+              'flex flex-1 items-center justify-center gap-1.5 rounded-md py-2 text-xs font-medium transition-colors',
               tab === entry.id
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',

@@ -1,13 +1,12 @@
 // Settings panel (radix Dialog). Hosts the view preferences that are persisted
-// to .supervision/config.json; opened from the toolbar gear or Supervision ▸
-// Settings… (Cmd+,). The controls share store state with the toolbar, so the
-// two stay in sync.
+// to .supervision/config.json; opened from Supervision ▸ Settings… (Cmd+,).
+// The controls share store state with the toolbar, so the two stay in sync.
 
 import { AlignJustify, Columns2, X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
-import { Toggle } from './ui/toggle';
+import { Switch } from './ui/switch';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 function Row({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -83,34 +82,27 @@ export function SettingsDialog() {
               </ToggleGroup>
             </Row>
 
+            {/* Same polarity as the toolbar toggle: on = whitespace visible. */}
             <Row
-              title="Ignore whitespace"
-              description="Hide whitespace-only changes."
+              title="Show whitespace"
+              description="Include whitespace-only changes in diffs."
             >
-              <Toggle
-                variant="outline"
-                size="sm"
-                aria-label="Ignore whitespace"
-                pressed={ignoreWhitespace}
-                onPressedChange={setIgnoreWhitespace}
-              >
-                {ignoreWhitespace ? 'On' : 'Off'}
-              </Toggle>
+              <Switch
+                aria-label="Show whitespace"
+                checked={!ignoreWhitespace}
+                onCheckedChange={(on) => setIgnoreWhitespace(!on)}
+              />
             </Row>
 
             <Row
               title="Wrap long lines"
               description="Wrap instead of scrolling horizontally."
             >
-              <Toggle
-                variant="outline"
-                size="sm"
+              <Switch
                 aria-label="Wrap long lines"
-                pressed={lineWrap}
-                onPressedChange={setLineWrap}
-              >
-                {lineWrap ? 'On' : 'Off'}
-              </Toggle>
+                checked={lineWrap}
+                onCheckedChange={setLineWrap}
+              />
             </Row>
 
             <Row

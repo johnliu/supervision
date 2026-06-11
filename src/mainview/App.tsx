@@ -27,6 +27,22 @@ export default function App() {
     refresh,
   ]);
 
+  // Suppress the webview's default context menu (Reload / Inspect Element…).
+  // preventDefault doesn't stop propagation, so radix ContextMenu triggers
+  // (toolbar) still open theirs; editable fields keep the native menu for
+  // cut/copy/paste.
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) {
+        return;
+      }
+      event.preventDefault();
+    };
+    document.addEventListener('contextmenu', onContextMenu);
+    return () => document.removeEventListener('contextmenu', onContextMenu);
+  }, []);
+
   return (
     <TooltipProvider>
       <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">

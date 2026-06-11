@@ -51,12 +51,12 @@ function ViewToggle() {
   const options = [
     {
       value: 'split' as const,
-      label: 'Split view',
+      label: 'Split',
       icon: <Columns2 />,
     },
     {
       value: 'unified' as const,
-      label: 'Unified view',
+      label: 'Unified',
       icon: <AlignJustify />,
     },
   ];
@@ -224,7 +224,7 @@ export function Toolbar() {
         </ContextMenu.Root>
       ) : null}
 
-      <Hint label={exported ? 'Copied!' : `Copy ${openComments} open comment${openComments === 1 ? '' : 's'} for LLM`}>
+      <Hint label={exported ? 'Copied!' : `Copy ${openComments} comment${openComments === 1 ? '' : 's'}`}>
         <Button
           variant="ghost"
           size="icon-lg"
@@ -257,12 +257,13 @@ export function Toolbar() {
         </Toggle>
       </Hint>
 
-      <Hint label={ignoreWhitespace ? 'Ignoring whitespace changes' : 'Showing whitespace changes'}>
+      {/* Pressed = showing whitespace changes; the default (off) hides them. */}
+      <Hint label={ignoreWhitespace ? 'Show whitespace' : 'Hide whitespace'}>
         <Toggle
           className={cn(CELL, 'min-w-9 p-0')}
-          aria-label="Ignore whitespace"
-          pressed={ignoreWhitespace}
-          onPressedChange={setIgnoreWhitespace}
+          aria-label="Show whitespace"
+          pressed={!ignoreWhitespace}
+          onPressedChange={(on) => setIgnoreWhitespace(!on)}
         >
           <Pilcrow />
         </Toggle>
