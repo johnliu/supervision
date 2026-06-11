@@ -1,9 +1,10 @@
 ---
-name: supervision-feedback
+name: supervision
 description: >-
-  Apply code-review feedback left in Supervision. Use when the user asks to
-  "address review comments", "apply supervision feedback", "respond to my
-  review", or otherwise act on a `.supervision/comments.json` file in the repo.
+  Apply code-review feedback left in Supervision. Use when the user invokes
+  /supervision, asks to "address review comments", "apply supervision
+  feedback", "respond to my review", or otherwise act on a
+  `.supervision/comments.json` file in the repo.
 ---
 
 # Supervision feedback

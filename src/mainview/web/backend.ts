@@ -287,7 +287,7 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       return {
         installed: skillInstalled,
         upToDate: skillInstalled,
-        path: '~/.claude/skills/supervision-feedback/SKILL.md',
+        path: '~/.claude/skills/supervision/SKILL.md',
       };
     },
     installSkill: async () => {
@@ -296,7 +296,7 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       return {
         installed: true,
         upToDate: true,
-        path: '~/.claude/skills/supervision-feedback/SKILL.md',
+        path: '~/.claude/skills/supervision/SKILL.md',
       };
     },
   };

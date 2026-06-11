@@ -64,7 +64,7 @@ function SkillRow({ open }: { open: boolean }) {
       <div className="min-w-0">
         <div className="text-sm font-medium">Claude Code skill</div>
         <div className="text-xs text-muted-foreground">
-          Teaches the agent to apply comments and reply in comments.json.
+          <code className="font-mono">/supervision</code> — the agent applies comments and replies in comments.json.
         </div>
         {status ? (
           <div
