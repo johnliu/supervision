@@ -51,7 +51,11 @@ export default function App() {
       <div className="relative flex h-screen w-screen overflow-hidden bg-sidebar text-foreground">
         <Sidebar />
         <div className="min-w-0 flex-1 p-2 pl-0">
-          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+          {/* Concentric with the window: innerRadius = outerRadius − gap.
+              This window class measures 16pt on Tahoe (NSThemeFrame probe)
+              and the gutter is 8px, so the card gets 8px. Revisit if the
+              gutter changes or electrobun ships an SDK-26 build (26pt). */}
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-border bg-background shadow-sm">
             {error ? (
               <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
                 {error}

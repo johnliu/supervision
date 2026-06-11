@@ -74,7 +74,14 @@ const mainWindow = new BrowserWindow({
   },
   // Modern macOS chrome: transparent titlebar, traffic lights inset over the
   // content (the sidebar leaves room for them via .platform-desktop padding).
+  // The offset moves the cluster from AppKit's plain-window default (9,9 on
+  // Tahoe, probed) to (19,19) — where toolbar-style windows (Messages, the
+  // Claude app) place it.
   titleBarStyle: 'hiddenInset',
+  trafficLightOffset: {
+    x: 10,
+    y: 10,
+  },
   rpc,
 });
 

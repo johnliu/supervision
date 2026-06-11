@@ -201,9 +201,9 @@ function compareLabel(compare: CompareSpec, log: CommitInfo[]): string {
   const short = (ref: string) => log.find((c) => c.hash === ref || c.shortHash === ref)?.shortHash ?? ref.slice(0, 7);
   switch (compare.kind) {
     case 'working':
-      return 'Working tree';
+      return 'working tree';
     case 'commit':
-      return `Commit ${short(compare.ref)}`;
+      return `${short(compare.ref)}`;
     case 'range':
       return `${short(compare.base)} → ${compare.head === null ? 'working tree' : short(compare.head)}`;
   }
@@ -271,7 +271,7 @@ const TABS: Array<{
   },
   {
     id: 'comments',
-    label: 'Comments',
+    label: 'Discuss',
     icon: <MessageSquare className="size-3.5 shrink-0" />,
   },
 ];
