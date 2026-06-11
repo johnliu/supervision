@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 import '../index.css';
 import App from '../App';
 import { setPlatform } from '../platform';
+import { createLiveBackend } from '../platform/live';
 import { useReviewStore } from '../store';
 import { createFixtureBackend } from './backend';
 import { getFixture } from './fixtures';
@@ -18,22 +19,22 @@ import { installTestHooks } from './testHooks';
 const params = parseWebParams(window.location.search);
 
 if (params.backend === 'live') {
-  // Lands with the live bridge milestone; fail loudly rather than confusingly.
-  throw new Error('web mode: ?backend=live is not implemented yet — use the fixture backend');
+  // Real Bun backend over the dev-only WS bridge (`bun run web`).
+  setPlatform(createLiveBackend(`${params.bridge}/socket`));
+} else {
+  const fixture = getFixture(params.fixture);
+  const handle = createFixtureBackend(fixture, {
+    style: params.style,
+    ignoreWhitespace: params.ignoreWhitespace,
+    delay: params.delay,
+  });
+  setPlatform(handle.backend);
+  installTestHooks({
+    store: useReviewStore,
+    backend: handle,
+    fixtureId: fixture.id,
+  });
 }
-
-const fixture = getFixture(params.fixture);
-const handle = createFixtureBackend(fixture, {
-  style: params.style,
-  ignoreWhitespace: params.ignoreWhitespace,
-  delay: params.delay,
-});
-setPlatform(handle.backend);
-installTestHooks({
-  store: useReviewStore,
-  backend: handle,
-  fixtureId: fixture.id,
-});
 
 // ?file=<path>: select once the first refresh lands the model.
 if (params.file) {
