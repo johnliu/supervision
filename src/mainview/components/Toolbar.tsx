@@ -101,17 +101,21 @@ function ViewToggle() {
 // Font size: clicking cycles the standard presets; right-clicking opens a
 // stepper to fine-tune pixel by pixel. The button is a Popover.Anchor (not a
 // Trigger) so the cycle click never doubles as a popover toggle.
-function FontSizeControl() {
+function FontSizeControl({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const fontSize = useReviewStore((state) => state.fontSize);
   const setFontSize = useReviewStore((state) => state.setFontSize);
   const [open, setOpen] = useState(false);
 
   const next = FONT_SIZE_PRESETS.find((size) => size > fontSize) ?? FONT_SIZE_PRESETS[0];
+  const setOpenAndNotify = (value: boolean) => {
+    setOpen(value);
+    onOpenChange(value);
+  };
 
   return (
     <Popover.Root
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={setOpenAndNotify}
     >
       <Hint label={`${fontSize}px → ${next}px`}>
         <Popover.Anchor asChild>
@@ -123,7 +127,7 @@ function FontSizeControl() {
             onClick={() => setFontSize(next)}
             onContextMenu={(event) => {
               event.preventDefault();
-              setOpen(true);
+              setOpenAndNotify(true);
             }}
           >
             <ALargeSmall />
@@ -180,10 +184,23 @@ export function Toolbar() {
     }
   };
 
+  // The bar fades to barely-there at rest so it never hides diff text; it
+  // returns on hover/keyboard focus — and stays solid while one of its
+  // portaled popups (font popover, approve menu) is open, since the pointer
+  // leaves the bar to use them.
+  const [openPopups, setOpenPopups] = useState(0);
+  const trackPopup = (open: boolean) => setOpenPopups((count) => count + (open ? 1 : -1));
+
   return (
-    <div className="absolute top-1/2 right-6 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-2xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
+    <div
+      className={cn(
+        'absolute top-1/2 right-6 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-2xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl',
+        'transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100',
+        openPopups > 0 ? 'opacity-100' : 'opacity-25',
+      )}
+    >
       {working ? (
-        <ContextMenu.Root>
+        <ContextMenu.Root onOpenChange={trackPopup}>
           <Hint label={file?.staged ? `Unapprove ${file.path}` : `Approve ${file?.path ?? 'file'}`}>
             <ContextMenu.Trigger asChild>
               <Button
@@ -290,7 +307,7 @@ export function Toolbar() {
         </Toggle>
       </Hint>
 
-      <FontSizeControl />
+      <FontSizeControl onOpenChange={trackPopup} />
 
       <div className="my-0.5 h-px w-6 shrink-0 bg-border" />
 
