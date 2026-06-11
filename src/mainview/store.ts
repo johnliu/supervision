@@ -10,6 +10,9 @@ import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './platfo
 
 export type DiffStyle = 'split' | 'unified';
 
+/** Which entry of a file that is BOTH staged and unstaged is displayed. */
+export type DiffSide = 'new' | 'approved';
+
 /** An in-progress comment: the line (or range) the composer is anchored to. */
 export interface Draft {
   path: string;
@@ -26,6 +29,8 @@ interface ReviewState {
   comments: Comment[];
   compare: CompareSpec;
   selectedPath: string | null;
+  /** Staged-vs-unstaged side shown for a file present in both buckets. */
+  diffSide: DiffSide;
   /** Current line selection in the diff for the selected file (null = none). */
   selectedLines: SelectedLineRange | null;
   /** Open inline comment composer, if any. */
@@ -54,6 +59,7 @@ interface ReviewState {
   /** Open the native folder picker, then switch to the chosen repo. */
   openProject: () => Promise<void>;
   select: (path: string) => void;
+  setDiffSide: (side: DiffSide) => void;
   /** Select the next/previous file in the sidebar order (wraps around). */
   selectNextFile: () => void;
   selectPrevFile: () => void;
@@ -205,6 +211,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       kind: 'working',
     },
     selectedPath: null,
+    diffSide: 'new',
     selectedLines: null,
     draft: null,
     quickOpen: false,
@@ -245,10 +252,17 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     select: (path) => {
       set({
         selectedPath: path,
-        // A line selection and any open composer belong to one file; drop them
-        // when switching files.
+        // A line selection, any open composer, and the staged-side choice all
+        // belong to one file; drop them when switching files.
+        diffSide: 'new',
         selectedLines: null,
         draft: null,
+      });
+    },
+
+    setDiffSide: (side) => {
+      set({
+        diffSide: side,
       });
     },
 

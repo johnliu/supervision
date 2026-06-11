@@ -54,7 +54,6 @@ import {
   nextChangeIndex,
   stopIndexForSelection,
 } from './diffNav';
-import { Button } from './ui/button';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 type AnnotationMeta =
@@ -288,10 +287,8 @@ export function DiffPane() {
   const commentOnRange = useReviewStore((state) => state.commentOnRange);
   const closeDraft = useReviewStore((state) => state.closeDraft);
   const comments = useReviewStore((state) => state.comments);
-  const approve = useReviewStore((state) => state.approve);
-  const unapprove = useReviewStore((state) => state.unapprove);
-  const working = useReviewStore((state) => state.compare.kind === 'working');
-  const [side, setSide] = useState<'new' | 'approved'>('new');
+  const diffSide = useReviewStore((state) => state.diffSide);
+  const setDiffSide = useReviewStore((state) => state.setDiffSide);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<ViewHandle>(null);
   // The scroll container CodeView renders (clientHeight = viewport height).
@@ -348,7 +345,7 @@ export function DiffPane() {
     ],
   );
   const hasBoth = unstagedEntry !== null && stagedEntry !== null;
-  const effectiveSide = side === 'approved' && stagedEntry ? 'approved' : 'new';
+  const effectiveSide = diffSide === 'approved' && stagedEntry ? 'approved' : 'new';
   const file = effectiveSide === 'approved' ? stagedEntry : (unstagedEntry ?? stagedEntry);
 
   const fileComments = useMemo(
@@ -1145,56 +1142,31 @@ export function DiffPane() {
     <div
       ref={containerRef}
       data-testid="diff-pane"
-      className="flex h-full flex-col"
+      className="relative flex h-full flex-col"
     >
-      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border bg-sidebar px-3 text-xs">
-        <span className="truncate text-foreground">{file.path}</span>
-        {file.binary ? (
-          <span className="shrink-0 font-mono text-muted-foreground">binary</span>
-        ) : (
-          <span className="shrink-0 font-mono text-muted-foreground">
-            <span className="text-emerald-500">+{file.additions}</span>{' '}
-            <span className="text-red-500">−{file.deletions}</span>
-          </span>
-        )}
-        {hasBoth ? (
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={effectiveSide}
-            onValueChange={(value) => {
-              if (value === 'new' || value === 'approved') {
-                setSide(value);
-              }
-            }}
-          >
-            <ToggleGroupItem value="new">Unstaged</ToggleGroupItem>
-            <ToggleGroupItem value="approved">Staged</ToggleGroupItem>
-          </ToggleGroup>
-        ) : null}
-        {working ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={() =>
-              file.staged
-                ? unapprove([
-                    file.path,
-                  ])
-                : approve([
-                    file.path,
-                  ])
+      {/* A file that is both staged and unstaged gets a floating side switch;
+          everything else the old file bar showed lives in the diff's own
+          header (filename, counts) or the toolbar (approve). */}
+      {hasBoth ? (
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          className="absolute top-2 right-3 z-30 rounded-lg bg-popover/90 shadow-md ring-1 ring-foreground/10 backdrop-blur-xl"
+          value={effectiveSide}
+          onValueChange={(value) => {
+            if (value === 'new' || value === 'approved') {
+              setDiffSide(value);
             }
-          >
-            {file.staged ? 'Unapprove' : 'Approve'}
-          </Button>
-        ) : null}
-      </div>
+          }}
+        >
+          <ToggleGroupItem value="new">Unstaged</ToggleGroupItem>
+          <ToggleGroupItem value="approved">Staged</ToggleGroupItem>
+        </ToggleGroup>
+      ) : null}
       {file.binary || !fileDiff ? (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
-          Binary file — diff not shown
+          {file.path} — binary file, diff not shown
         </div>
       ) : (
         <CodeView<AnnotationMeta>
@@ -1202,12 +1174,14 @@ export function DiffPane() {
           ref={viewRef}
           containerRef={attachScroller}
           className="min-h-0 flex-1 overflow-auto bg-background select-none"
-          // The diff reads --diffs-font-size inside its shadow root; custom
-          // properties inherit across the boundary, and the lib's
-          // ResizeObservers re-measure rows when the size changes.
+          // The diff reads --diffs-font-size / --diffs-line-height inside its
+          // shadow root; custom properties inherit across the boundary, and
+          // the lib's ResizeObservers re-measure rows when they change. Line
+          // height tracks the font at the default 20/13 ratio.
           style={
             {
               '--diffs-font-size': `${fontSize}px`,
+              '--diffs-line-height': `${Math.round(fontSize * 1.5)}px`,
             } as React.CSSProperties
           }
           items={items}
