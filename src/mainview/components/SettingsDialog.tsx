@@ -122,10 +122,12 @@ export function SettingsDialog() {
               title="Diff view"
               description="Side-by-side or inline."
             >
+              {/* spacing=0 joins the buttons into one bordered group. */}
               <ToggleGroup
                 type="single"
                 variant="outline"
                 size="sm"
+                spacing={0}
                 value={diffStyle}
                 onValueChange={(value) => {
                   if (value === 'split' || value === 'unified') {
@@ -135,15 +137,17 @@ export function SettingsDialog() {
               >
                 <ToggleGroupItem
                   value="split"
-                  aria-label="Split view"
+                  aria-label="Split"
                 >
                   <Columns2 />
+                  Split
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="unified"
-                  aria-label="Unified view"
+                  aria-label="Unified"
                 >
                   <AlignJustify />
+                  Unified
                 </ToggleGroupItem>
               </ToggleGroup>
             </Row>

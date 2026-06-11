@@ -39,6 +39,7 @@ import {
   type SelectedLineRange,
 } from '@pierre/diffs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
 import type { AnnotationSide } from '../../shared/types';
 import { useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
@@ -54,7 +55,6 @@ import {
   nextChangeIndex,
   stopIndexForSelection,
 } from './diffNav';
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 type AnnotationMeta =
   | {
@@ -1210,25 +1210,48 @@ export function DiffPane() {
       data-testid="diff-pane"
       className="relative flex h-full flex-col"
     >
-      {/* A file that is both staged and unstaged gets a floating side switch;
-          everything else the old file bar showed lives in the diff's own
-          header (filename, counts) or the toolbar (approve). */}
+      {/* A file that is both staged and unstaged gets a floating side switch —
+          a sliding segmented control like the toolbar's view toggle, so the
+          pair reads as one group. Everything else the old file bar showed
+          lives in the diff's own header (filename, counts) or the toolbar. */}
       {hasBoth ? (
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          className="absolute top-2 right-3 z-30 rounded-lg bg-popover/90 shadow-md ring-1 ring-foreground/10 backdrop-blur-xl"
-          value={effectiveSide}
-          onValueChange={(value) => {
-            if (value === 'new' || value === 'approved') {
-              setDiffSide(value);
-            }
-          }}
-        >
-          <ToggleGroupItem value="new">Unstaged</ToggleGroupItem>
-          <ToggleGroupItem value="approved">Staged</ToggleGroupItem>
-        </ToggleGroup>
+        <div className="absolute top-2 right-3 z-30 rounded-lg bg-popover/90 p-1 shadow-md ring-1 ring-foreground/10 backdrop-blur-xl">
+          <div className="relative flex gap-1">
+            <div
+              aria-hidden
+              className="absolute top-0 left-0 h-7 w-24 rounded-md bg-background shadow-sm ring-1 ring-foreground/10 transition-transform duration-200 ease-out"
+              style={{
+                // travel = cell (96px) + gap-1 (4px)
+                transform: `translateX(${effectiveSide === 'approved' ? 100 : 0}px)`,
+              }}
+            />
+            {(
+              [
+                [
+                  'new',
+                  'Unstaged',
+                ],
+                [
+                  'approved',
+                  'Staged',
+                ],
+              ] as const
+            ).map(([side, label]) => (
+              <button
+                key={side}
+                type="button"
+                aria-pressed={effectiveSide === side}
+                onClick={() => setDiffSide(side)}
+                className={cn(
+                  'relative z-10 flex h-7 w-24 items-center justify-center rounded-md text-xs font-medium transition-colors',
+                  effectiveSide === side ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       ) : null}
       {file.binary || !fileDiff ? (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
