@@ -29,8 +29,7 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
-        <Toolbar />
+      <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
         {error ? (
           <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
             {error}
@@ -42,6 +41,7 @@ export default function App() {
             <DiffPane />
           </div>
         </div>
+        <Toolbar />
       </div>
       <QuickOpen />
       <SettingsDialog />

@@ -1,5 +1,6 @@
 // Switches what the review compares: the working tree (default), a single
-// commit (vs its parent), or an arbitrary base..head range.
+// commit (vs its parent), or an arbitrary base..head range. Stacks vertically
+// to fit its home in the sidebar footer.
 
 import { useState } from 'react';
 import { useReviewStore } from '../store';
@@ -14,7 +15,7 @@ export function CompareSelector() {
   const [head, setHead] = useState('HEAD');
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-col gap-1.5">
       <Select
         value={compare.kind}
         onValueChange={(kind) => {
@@ -38,7 +39,7 @@ export function CompareSelector() {
       >
         <SelectTrigger
           size="sm"
-          className="w-[140px]"
+          className="w-full"
         >
           <SelectValue />
         </SelectTrigger>
@@ -51,7 +52,7 @@ export function CompareSelector() {
 
       {compare.kind === 'commit' ? (
         <Input
-          className="h-8 w-28"
+          className="h-8 w-full"
           value={ref}
           placeholder="ref"
           onChange={(event) => setRef(event.target.value)}
@@ -73,9 +74,9 @@ export function CompareSelector() {
       ) : null}
 
       {compare.kind === 'range' ? (
-        <>
+        <div className="flex items-center gap-1.5">
           <Input
-            className="h-8 w-24"
+            className="h-8 min-w-0 flex-1"
             value={base}
             placeholder="base"
             onChange={(event) => setBase(event.target.value)}
@@ -89,7 +90,7 @@ export function CompareSelector() {
           />
           <span className="text-muted-foreground">..</span>
           <Input
-            className="h-8 w-24"
+            className="h-8 min-w-0 flex-1"
             value={head}
             placeholder="head"
             onChange={(event) => setHead(event.target.value)}
@@ -110,7 +111,7 @@ export function CompareSelector() {
               })
             }
           />
-        </>
+        </div>
       ) : null}
     </div>
   );

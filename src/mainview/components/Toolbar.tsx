@@ -1,12 +1,11 @@
-// Top toolbar: repo + compare selector on the left; icon actions on the right
-// (split/unified toggle, ignore-whitespace, copy-for-LLM, approve-all,
-// refresh), each with a tooltip explaining what it does.
+// Floating action bar centered at the bottom of the window, like a design
+// tool's toolbar: view toggle, ignore-whitespace, copy-for-LLM, approve-all
+// (working mode), refresh. Repo + compare selection live in the sidebar
+// footer; settings opens from the application menu (Cmd+,).
 
-import { AlignJustify, CheckCheck, ClipboardCopy, Columns2, Pilcrow, RefreshCw, Settings } from 'lucide-react';
+import { AlignJustify, CheckCheck, ClipboardCopy, Columns2, Pilcrow, RefreshCw } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { useReviewStore } from '../store';
-import { CompareSelector } from './CompareSelector';
-import { ProjectSwitcher } from './ProjectSwitcher';
 import { Button } from './ui/button';
 import { Toggle } from './ui/toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
@@ -32,7 +31,6 @@ export function Toolbar() {
   const refresh = useReviewStore((state) => state.refresh);
   const approve = useReviewStore((state) => state.approve);
   const exportReview = useReviewStore((state) => state.exportReview);
-  const setSettings = useReviewStore((state) => state.setSettings);
   const loading = useReviewStore((state) => state.loading);
   const [exported, setExported] = useState(false);
 
@@ -50,87 +48,74 @@ export function Toolbar() {
   };
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-sidebar px-3">
-      <span className="font-heading text-sm font-semibold">Supervision</span>
-      <CompareSelector />
-      <ProjectSwitcher />
-
-      <div className="ml-auto flex items-center gap-2">
-        <Hint label={diffStyle === 'split' ? 'Switch to unified view' : 'Switch to split view'}>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label={diffStyle === 'split' ? 'Switch to unified view' : 'Switch to split view'}
-            onClick={() => setDiffStyle(diffStyle === 'split' ? 'unified' : 'split')}
-          >
-            {diffStyle === 'split' ? <Columns2 /> : <AlignJustify />}
-          </Button>
-        </Hint>
-
-        <Hint label={ignoreWhitespace ? 'Ignoring whitespace changes' : 'Showing whitespace changes'}>
-          <Toggle
-            variant="outline"
-            size="sm"
-            aria-label="Ignore whitespace"
-            pressed={ignoreWhitespace}
-            onPressedChange={setIgnoreWhitespace}
-          >
-            <Pilcrow />
-          </Toggle>
-        </Hint>
-
-        <Hint
-          label={exported ? 'Copied!' : `Copy ${openComments} open comment${openComments === 1 ? '' : 's'} for LLM`}
+    <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl">
+      <Hint label={diffStyle === 'split' ? 'Switch to unified view' : 'Switch to split view'}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={diffStyle === 'split' ? 'Switch to unified view' : 'Switch to split view'}
+          onClick={() => setDiffStyle(diffStyle === 'split' ? 'unified' : 'split')}
         >
+          {diffStyle === 'split' ? <Columns2 /> : <AlignJustify />}
+        </Button>
+      </Hint>
+
+      <Hint label={ignoreWhitespace ? 'Ignoring whitespace changes' : 'Showing whitespace changes'}>
+        <Toggle
+          size="default"
+          className="size-7 min-w-7 p-0"
+          aria-label="Ignore whitespace"
+          pressed={ignoreWhitespace}
+          onPressedChange={setIgnoreWhitespace}
+        >
+          <Pilcrow />
+        </Toggle>
+      </Hint>
+
+      <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
+
+      <Hint label={exported ? 'Copied!' : `Copy ${openComments} open comment${openComments === 1 ? '' : 's'} for LLM`}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label="Copy comments for LLM"
+          disabled={openComments === 0}
+          onClick={onExport}
+        >
+          <ClipboardCopy />
+          {openComments > 0 ? (
+            <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5rem] font-semibold text-primary-foreground">
+              {openComments}
+            </span>
+          ) : null}
+        </Button>
+      </Hint>
+
+      {compare.kind === 'working' ? (
+        <Hint label={`Approve all ${pendingPaths.length} unstaged file${pendingPaths.length === 1 ? '' : 's'}`}>
           <Button
-            variant="outline"
-            size="icon-sm"
-            className="relative"
-            disabled={openComments === 0}
-            onClick={onExport}
+            variant="ghost"
+            size="icon"
+            aria-label="Approve all unstaged files"
+            disabled={pendingPaths.length === 0}
+            onClick={() => approve(pendingPaths)}
           >
-            <ClipboardCopy />
-            {openComments > 0 ? (
-              <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[0.5rem] font-semibold text-primary-foreground">
-                {openComments}
-              </span>
-            ) : null}
+            <CheckCheck />
           </Button>
         </Hint>
+      ) : null}
 
-        {compare.kind === 'working' ? (
-          <Hint label={`Approve all ${pendingPaths.length} unstaged file${pendingPaths.length === 1 ? '' : 's'}`}>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              disabled={pendingPaths.length === 0}
-              onClick={() => approve(pendingPaths)}
-            >
-              <CheckCheck />
-            </Button>
-          </Hint>
-        ) : null}
-
-        <Hint label="Refresh">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            onClick={() => refresh()}
-          >
-            <RefreshCw className={loading ? 'animate-spin' : undefined} />
-          </Button>
-        </Hint>
-
-        <Hint label="Settings">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            onClick={() => setSettings(true)}
-          >
-            <Settings />
-          </Button>
-        </Hint>
-      </div>
+      <Hint label="Refresh">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Refresh"
+          onClick={() => refresh()}
+        >
+          <RefreshCw className={loading ? 'animate-spin' : undefined} />
+        </Button>
+      </Hint>
     </div>
   );
 }

@@ -9,6 +9,9 @@
 // useFileTree builds its model once, so each tree is keyed by its path set and
 // remounts when files are added/removed/approved, while the section's open
 // state (keyed stably) survives those refreshes.
+//
+// A footer pinned below the scroll area holds the compare selector and the
+// project switcher — the two controls that decide what the list above shows.
 
 import { themeToTreeStyles } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
@@ -17,6 +20,8 @@ import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { FileChange } from '../../shared/types';
 import { useReviewStore } from '../store';
+import { CompareSelector } from './CompareSelector';
+import { ProjectSwitcher } from './ProjectSwitcher';
 
 // Matches @pierre/trees' default density itemHeight (model/density.ts).
 const ITEM_HEIGHT = 30;
@@ -195,32 +200,41 @@ export function Sidebar() {
 
   return (
     <div
-      className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar py-2 text-sidebar-foreground"
+      className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
       style={TREE_STYLE}
     >
-      {model ? (
-        <>
-          {model.unreviewed.length > 0 ? (
-            <Section
-              key="unreviewed"
-              title={working ? 'Unstaged' : 'Changed'}
-              files={model.unreviewed}
-              defaultOpen
-            />
-          ) : null}
-          {working && model.reviewed.length > 0 ? (
-            <Section
-              key="reviewed"
-              title="Staged"
-              files={model.reviewed}
-              defaultOpen={false}
-            />
-          ) : null}
-          {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}
-        </>
-      ) : (
-        <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        {model ? (
+          <>
+            {model.unreviewed.length > 0 ? (
+              <Section
+                key="unreviewed"
+                title={working ? 'Unstaged' : 'Changed'}
+                files={model.unreviewed}
+                defaultOpen
+              />
+            ) : null}
+            {working && model.reviewed.length > 0 ? (
+              <Section
+                key="reviewed"
+                title="Staged"
+                files={model.reviewed}
+                defaultOpen={false}
+              />
+            ) : null}
+            {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}
+          </>
+        ) : (
+          <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>
+        )}
+      </div>
+
+      {/* What's under review (repo + compare) is scoped by the sidebar's file
+          list, so the pickers live with it, pinned below the scroll area. */}
+      <div className="flex shrink-0 flex-col gap-1.5 border-t border-sidebar-border p-2">
+        <CompareSelector />
+        <ProjectSwitcher />
+      </div>
     </div>
   );
 }

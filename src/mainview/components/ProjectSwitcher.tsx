@@ -1,6 +1,6 @@
-// Project switcher: the toolbar repo label becomes a dropdown to jump between
-// recently-opened repos or pick a new one via the native folder dialog.
-// Switching repoints the Bun side and re-hydrates the whole review.
+// Project switcher: the sidebar-footer repo label becomes a dropdown to jump
+// between recently-opened repos or pick a new one via the native folder
+// dialog. Switching repoints the Bun side and re-hydrates the whole review.
 
 import { Check, ChevronsUpDown, FolderOpen } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
@@ -27,10 +27,10 @@ export function ProjectSwitcher() {
         <button
           type="button"
           title={current}
-          className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none"
+          className="flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none"
         >
           <span className="truncate">{current ? basename(current) : 'No project'}</span>
-          <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
+          <ChevronsUpDown className="ml-auto size-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
