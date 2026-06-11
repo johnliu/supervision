@@ -11,6 +11,7 @@ import type {
   CommitInfo,
   CompareSpec,
   FileChange,
+  RepoInfo,
   ReviewModel,
   SetRepoResult,
 } from '../shared/types';
@@ -66,6 +67,8 @@ interface ReviewState {
   recentProjects: string[];
   /** Recent commits, newest first (the sidebar history tab). */
   log: CommitInfo[];
+  /** Project / worktree / branch identity (the sidebar footer). */
+  repoInfo: RepoInfo | null;
   /** Pending jump-to-comment scroll request, consumed by the DiffPane. */
   scrollTarget: ScrollTarget | null;
   refresh: () => Promise<void>;
@@ -198,6 +201,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       draft: null,
       comments: [],
       log: [],
+      repoInfo: null,
       scrollTarget: null,
       error: null,
     });
@@ -247,6 +251,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     fontSize: CONFIG_DEFAULTS.fontSize,
     recentProjects: [],
     log: [],
+    repoInfo: null,
     scrollTarget: null,
 
     refresh: async () => {
@@ -273,8 +278,8 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           loading: false,
         });
       }
-      // History is auxiliary — a backend without getLog (or an empty repo)
-      // must not fail the review itself.
+      // History and repo identity are auxiliary — a backend without these
+      // (or an empty repo) must not fail the review itself.
       try {
         set({
           log: await api.getLog(),
@@ -282,6 +287,15 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       } catch {
         set({
           log: [],
+        });
+      }
+      try {
+        set({
+          repoInfo: await api.getRepoInfo(),
+        });
+      } catch {
+        set({
+          repoInfo: null,
         });
       }
     },

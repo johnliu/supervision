@@ -13,11 +13,15 @@ function basename(repoPath: string): string {
 
 export function ProjectSwitcher() {
   const model = useReviewStore((state) => state.model);
+  const repoInfo = useReviewStore((state) => state.repoInfo);
   const recentProjects = useReviewStore((state) => state.recentProjects);
   const switchRepo = useReviewStore((state) => state.switchRepo);
   const openProject = useReviewStore((state) => state.openProject);
 
   const current = model?.repoRoot ?? '';
+  // The trigger names the PROJECT (the main checkout); when reviewing a linked
+  // worktree the footer's branch line carries the worktree name.
+  const projectLabel = repoInfo ? basename(repoInfo.projectRoot) : current ? basename(current) : 'No project';
   // Recents minus the current repo — it already shows in the trigger + header.
   const others = recentProjects.filter((repoPath) => repoPath !== current);
 
@@ -29,7 +33,7 @@ export function ProjectSwitcher() {
           title={current}
           className="flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none"
         >
-          <span className="truncate">{current ? basename(current) : 'No project'}</span>
+          <span className="truncate">{projectLabel}</span>
           <ChevronsUpDown className="ml-auto size-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenu.Trigger>

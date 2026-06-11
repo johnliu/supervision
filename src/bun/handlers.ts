@@ -81,6 +81,7 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       };
     },
     getReview: async ({ compare }) => git.getReview(currentRepo, compare),
+    getRepoInfo: async () => git.getRepoInfo(currentRepo),
     getLog: async () => git.getLog(currentRepo),
     stage: async ({ paths }) => {
       // git resolves the repo-relative paths against cwd, so stage/unstage

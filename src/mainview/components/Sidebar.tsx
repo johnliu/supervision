@@ -12,14 +12,15 @@
 //
 // The sidebar is tabbed: Files (this tree), History (the git panel, which owns
 // working/commit/range selection), and Comments (jump list). A footer pinned
-// below holds the project switcher.
+// below holds the project switcher plus the review identity: worktree, branch,
+// and the current compare target.
 
 import { themeToTreeStyles } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { ChevronRight, FolderTree, History, MessageSquare } from 'lucide-react';
+import { ChevronRight, FolderTree, GitBranch, GitCompareArrows, History, MessageSquare } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { FileChange } from '../../shared/types';
+import type { CommitInfo, CompareSpec, FileChange } from '../../shared/types';
 import { useReviewStore } from '../store';
 import { CommentsPanel } from './CommentsPanel';
 import { HistoryPanel } from './HistoryPanel';
@@ -195,6 +196,55 @@ function Section({ title, files, defaultOpen }: { title: string; files: FileChan
   );
 }
 
+/** Short label for the compare target ("Working tree", "Commit abc1234", …). */
+function compareLabel(compare: CompareSpec, log: CommitInfo[]): string {
+  const short = (ref: string) => log.find((c) => c.hash === ref || c.shortHash === ref)?.shortHash ?? ref.slice(0, 7);
+  switch (compare.kind) {
+    case 'working':
+      return 'Working tree';
+    case 'commit':
+      return `Commit ${short(compare.ref)}`;
+    case 'range':
+      return `${short(compare.base)} → ${compare.head === null ? 'working tree' : short(compare.head)}`;
+  }
+}
+
+// Project switcher plus the identity lines the footer owes the user: which
+// worktree/branch is under review, and what the diff is being compared to.
+function SidebarFooter() {
+  const repoInfo = useReviewStore((state) => state.repoInfo);
+  const compare = useReviewStore((state) => state.compare);
+  const log = useReviewStore((state) => state.log);
+
+  const branchLine = repoInfo
+    ? [
+        repoInfo.worktree,
+        repoInfo.branch,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+
+  return (
+    <div className="flex shrink-0 flex-col gap-1 border-t border-sidebar-border p-2">
+      <ProjectSwitcher />
+      {branchLine ? (
+        <div
+          className="flex items-center gap-1.5 px-1.5 text-[0.65rem] text-muted-foreground"
+          title={repoInfo?.root}
+        >
+          <GitBranch className="size-3 shrink-0" />
+          <span className="truncate">{branchLine}</span>
+        </div>
+      ) : null}
+      <div className="flex items-center gap-1.5 px-1.5 text-[0.65rem] text-muted-foreground">
+        <GitCompareArrows className="size-3 shrink-0" />
+        <span className="truncate">{compareLabel(compare, log)}</span>
+      </div>
+    </div>
+  );
+}
+
 type SidebarTab = 'files' | 'history' | 'comments';
 
 const TABS: Array<{
@@ -283,9 +333,7 @@ export function Sidebar() {
         {tab === 'comments' ? <CommentsPanel /> : null}
       </div>
 
-      <div className="flex shrink-0 flex-col border-t border-sidebar-border p-2">
-        <ProjectSwitcher />
-      </div>
+      <SidebarFooter />
     </div>
   );
 }

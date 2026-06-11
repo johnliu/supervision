@@ -14,6 +14,7 @@ import type {
   Comment,
   CommitInfo,
   CompareSpec,
+  RepoInfo,
   ReviewModel,
   SetRepoResult,
   SupervisionConfig,
@@ -39,6 +40,11 @@ export type SupervisionRPC = {
       getLog: {
         params: undefined;
         response: CommitInfo[];
+      };
+      /** Project / worktree / branch identity for the sidebar footer. */
+      getRepoInfo: {
+        params: undefined;
+        response: RepoInfo;
       };
       stage: {
         params: {

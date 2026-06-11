@@ -5,8 +5,8 @@
 // have their contents omitted, so a large binary never gets read into memory or
 // shipped over the RPC bridge.
 
-import { join } from 'node:path';
-import type { CommitInfo, CompareSpec, FileChange, FileStatus, ReviewModel } from '../shared/types';
+import { basename, dirname, join, resolve } from 'node:path';
+import type { CommitInfo, CompareSpec, FileChange, FileStatus, RepoInfo, ReviewModel } from '../shared/types';
 
 interface GitResult {
   stdout: string;
@@ -77,6 +77,60 @@ export async function getRepoRoot(cwd: string): Promise<string | null> {
     return null;
   }
   return res.stdout.trim() || null;
+}
+
+/**
+ * Project / worktree / branch identity for the footer. A linked worktree is
+ * detected by its git dir living under the main checkout's common dir
+ * (`<main>/.git/worktrees/<name>`); the project root is the common dir's
+ * parent. Branch resolution: symbolic ref (works on an unborn branch), else a
+ * short sha (detached HEAD), else null (not a repo / no commits).
+ */
+export async function getRepoInfo(cwd: string): Promise<RepoInfo> {
+  const root = await getRepoRoot(cwd);
+  if (!root) {
+    return {
+      root: cwd,
+      projectRoot: cwd,
+      branch: null,
+      worktree: null,
+    };
+  }
+  const [symbolicRes, gitDirRes, commonRes] = await Promise.all([
+    git(root, [
+      'symbolic-ref',
+      '--short',
+      '-q',
+      'HEAD',
+    ]),
+    git(root, [
+      'rev-parse',
+      '--absolute-git-dir',
+    ]),
+    git(root, [
+      'rev-parse',
+      '--git-common-dir',
+    ]),
+  ]);
+  let branch = symbolicRes.exitCode === 0 ? symbolicRes.stdout.trim() : null;
+  if (!branch) {
+    const sha = await git(root, [
+      'rev-parse',
+      '--short',
+      'HEAD',
+    ]);
+    branch = sha.exitCode === 0 ? sha.stdout.trim() : null;
+  }
+  const gitDir = gitDirRes.exitCode === 0 ? gitDirRes.stdout.trim() : join(root, '.git');
+  // --git-common-dir may print a relative path (".git" in the main checkout).
+  const commonDir = commonRes.exitCode === 0 ? resolve(root, commonRes.stdout.trim()) : gitDir;
+  const linked = gitDir !== commonDir;
+  return {
+    root,
+    projectRoot: linked ? dirname(commonDir) : root,
+    branch,
+    worktree: linked ? basename(root) : null,
+  };
 }
 
 function mapStatusLetter(letter: string): FileStatus {

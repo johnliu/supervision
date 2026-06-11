@@ -44,6 +44,18 @@ export interface FileChange {
   untracked: boolean;
 }
 
+/** Identity of the repo under review, shown in the sidebar footer. */
+export interface RepoInfo {
+  /** Git root under review (a linked worktree's own root when applicable). */
+  root: string;
+  /** Main repository root — equals `root` outside linked worktrees. */
+  projectRoot: string;
+  /** Checked-out branch, a short detached-HEAD sha, or null (no commits). */
+  branch: string | null;
+  /** Linked-worktree name (basename of `root`); null in the main checkout. */
+  worktree: string | null;
+}
+
 export interface ReviewModel {
   repoRoot: string;
   compare: CompareSpec;

@@ -147,6 +147,15 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       await wait();
       return clone(FIXTURE_LOG);
     },
+    getRepoInfo: async () => {
+      await wait();
+      return {
+        root: model.repoRoot,
+        projectRoot: model.repoRoot,
+        branch: 'main',
+        worktree: null,
+      };
+    },
     stage: async (params) => {
       await wait();
       move(params?.paths ?? [], true);
