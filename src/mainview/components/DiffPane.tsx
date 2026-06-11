@@ -280,6 +280,8 @@ export function DiffPane() {
   const selectedPath = useReviewStore((state) => state.selectedPath);
   const diffStyle = useReviewStore((state) => state.diffStyle);
   const ignoreWhitespace = useReviewStore((state) => state.ignoreWhitespace);
+  const lineWrap = useReviewStore((state) => state.lineWrap);
+  const fontSize = useReviewStore((state) => state.fontSize);
   const selectedLines = useReviewStore((state) => state.selectedLines);
   const setSelectedLines = useReviewStore((state) => state.setSelectedLines);
   const draft = useReviewStore((state) => state.draft);
@@ -664,6 +666,7 @@ export function DiffPane() {
   const diffOptions = useMemo<DiffViewOptions>(
     () => ({
       diffStyle,
+      overflow: lineWrap ? 'wrap' : 'scroll',
       theme: THEME,
       themeType: 'dark',
       layout: LAYOUT,
@@ -774,6 +777,7 @@ export function DiffPane() {
     }),
     [
       diffStyle,
+      lineWrap,
       filePath,
       setSelectedLines,
       commentOnRange,
@@ -1198,6 +1202,14 @@ export function DiffPane() {
           ref={viewRef}
           containerRef={attachScroller}
           className="min-h-0 flex-1 overflow-auto bg-background select-none"
+          // The diff reads --diffs-font-size inside its shadow root; custom
+          // properties inherit across the boundary, and the lib's
+          // ResizeObservers re-measure rows when the size changes.
+          style={
+            {
+              '--diffs-font-size': `${fontSize}px`,
+            } as React.CSSProperties
+          }
           items={items}
           options={diffOptions}
           selectedLines={

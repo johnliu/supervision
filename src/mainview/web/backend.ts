@@ -4,6 +4,7 @@
 // move files between buckets, comments persist (in memory), config round-trips,
 // and setRepo switches between fixture "repos" with a repoChanged push.
 
+import { CONFIG_DEFAULTS } from '../../shared/config';
 import { renderMarkdown } from '../../shared/reviewMarkdown';
 import type { Comment, ReviewModel, SupervisionConfig } from '../../shared/types';
 import type { PlatformBackend, RepoChangedInfo, SupervisionApi } from '../platform';
@@ -39,6 +40,7 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
   let model = clone(fixture.model);
   let comments = clone(fixture.comments);
   const config: SupervisionConfig = {
+    ...CONFIG_DEFAULTS,
     ...fixture.config,
     ...(opts.style
       ? {
@@ -178,6 +180,8 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       if (input) {
         config.diffStyle = input.diffStyle;
         config.ignoreWhitespace = input.ignoreWhitespace;
+        config.lineWrap = input.lineWrap;
+        config.fontSize = input.fontSize;
       }
       return {
         ...config,

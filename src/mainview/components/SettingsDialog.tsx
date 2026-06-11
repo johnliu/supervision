@@ -3,9 +3,11 @@
 // Settings… (Cmd+,). The controls share store state with the toolbar, so the
 // two stay in sync.
 
-import { AlignJustify, Columns2, X } from 'lucide-react';
+import { AlignJustify, Columns2, Minus, Plus, X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
+import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../shared/config';
 import { useReviewStore } from '../store';
+import { Button } from './ui/button';
 import { Toggle } from './ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
@@ -28,6 +30,10 @@ export function SettingsDialog() {
   const setDiffStyle = useReviewStore((state) => state.setDiffStyle);
   const ignoreWhitespace = useReviewStore((state) => state.ignoreWhitespace);
   const setIgnoreWhitespace = useReviewStore((state) => state.setIgnoreWhitespace);
+  const lineWrap = useReviewStore((state) => state.lineWrap);
+  const setLineWrap = useReviewStore((state) => state.setLineWrap);
+  const fontSize = useReviewStore((state) => state.fontSize);
+  const setFontSize = useReviewStore((state) => state.setFontSize);
 
   return (
     <Dialog.Root
@@ -93,6 +99,48 @@ export function SettingsDialog() {
               >
                 {ignoreWhitespace ? 'On' : 'Off'}
               </Toggle>
+            </Row>
+
+            <Row
+              title="Wrap long lines"
+              description="Wrap instead of scrolling horizontally."
+            >
+              <Toggle
+                variant="outline"
+                size="sm"
+                aria-label="Wrap long lines"
+                pressed={lineWrap}
+                onPressedChange={setLineWrap}
+              >
+                {lineWrap ? 'On' : 'Off'}
+              </Toggle>
+            </Row>
+
+            <Row
+              title="Font size"
+              description="Diff text size in pixels."
+            >
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Decrease font size"
+                  disabled={fontSize <= FONT_SIZE_MIN}
+                  onClick={() => setFontSize(fontSize - 1)}
+                >
+                  <Minus />
+                </Button>
+                <span className="w-10 text-center font-mono text-xs tabular-nums">{fontSize}px</span>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label="Increase font size"
+                  disabled={fontSize >= FONT_SIZE_MAX}
+                  onClick={() => setFontSize(fontSize + 1)}
+                >
+                  <Plus />
+                </Button>
+              </div>
             </Row>
           </div>
         </Dialog.Content>

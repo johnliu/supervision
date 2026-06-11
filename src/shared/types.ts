@@ -78,6 +78,10 @@ export interface CommentsFile {
 export interface SupervisionConfig {
   diffStyle: 'split' | 'unified';
   ignoreWhitespace: boolean;
+  /** Wrap long lines in the diff instead of scrolling horizontally. */
+  lineWrap: boolean;
+  /** Diff font size in pixels (see shared/config.ts for bounds). */
+  fontSize: number;
 }
 
 /**

@@ -4,6 +4,7 @@
 
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { create } from 'zustand';
+import { CONFIG_DEFAULTS, clampFontSize } from '../shared/config';
 import type { AnnotationSide, Comment, CompareSpec, FileChange, ReviewModel, SetRepoResult } from '../shared/types';
 import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './platform';
 
@@ -37,6 +38,10 @@ interface ReviewState {
   shortcuts: boolean;
   diffStyle: DiffStyle;
   ignoreWhitespace: boolean;
+  /** Wrap long diff lines instead of scrolling horizontally. */
+  lineWrap: boolean;
+  /** Diff font size in pixels. */
+  fontSize: number;
   /** Recently-opened repo roots, newest first (for the project switcher). */
   recentProjects: string[];
   refresh: () => Promise<void>;
@@ -60,6 +65,8 @@ interface ReviewState {
   commentOnRange: (path: string, range: SelectedLineRange) => void;
   setDiffStyle: (style: DiffStyle) => void;
   setIgnoreWhitespace: (value: boolean) => void;
+  setLineWrap: (value: boolean) => void;
+  setFontSize: (size: number) => void;
   setSettings: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
   setCompare: (compare: CompareSpec) => Promise<void>;
@@ -173,6 +180,8 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     void api.saveConfig({
       diffStyle: get().diffStyle,
       ignoreWhitespace: get().ignoreWhitespace,
+      lineWrap: get().lineWrap,
+      fontSize: get().fontSize,
     });
   };
 
@@ -201,8 +210,10 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     quickOpen: false,
     settings: false,
     shortcuts: false,
-    diffStyle: 'split',
-    ignoreWhitespace: true,
+    diffStyle: CONFIG_DEFAULTS.diffStyle,
+    ignoreWhitespace: CONFIG_DEFAULTS.ignoreWhitespace,
+    lineWrap: CONFIG_DEFAULTS.lineWrap,
+    fontSize: CONFIG_DEFAULTS.fontSize,
     recentProjects: [],
 
     refresh: async () => {
@@ -323,6 +334,20 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       persistConfig();
     },
 
+    setLineWrap: (value) => {
+      set({
+        lineWrap: value,
+      });
+      persistConfig();
+    },
+
+    setFontSize: (size) => {
+      set({
+        fontSize: clampFontSize(size),
+      });
+      persistConfig();
+    },
+
     setSettings: (open) => {
       set({
         settings: open,
@@ -341,6 +366,8 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         set({
           diffStyle: loaded.diffStyle,
           ignoreWhitespace: loaded.ignoreWhitespace,
+          lineWrap: loaded.lineWrap,
+          fontSize: loaded.fontSize,
         });
       } catch (error) {
         console.error('Failed to load config', error);

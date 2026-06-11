@@ -3,12 +3,8 @@
 
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { CONFIG_DEFAULTS, clampFontSize } from '../shared/config';
 import type { SupervisionConfig } from '../shared/types';
-
-const DEFAULTS: SupervisionConfig = {
-  diffStyle: 'split',
-  ignoreWhitespace: true,
-};
 
 function configPath(repoRoot: string): string {
   return path.join(repoRoot, '.supervision', 'config.json');
@@ -18,7 +14,7 @@ export async function readConfig(repoRoot: string): Promise<SupervisionConfig> {
   const file = Bun.file(configPath(repoRoot));
   if (!(await file.exists())) {
     return {
-      ...DEFAULTS,
+      ...CONFIG_DEFAULTS,
     };
   }
   try {
@@ -26,10 +22,12 @@ export async function readConfig(repoRoot: string): Promise<SupervisionConfig> {
     return {
       diffStyle: data.diffStyle === 'unified' ? 'unified' : 'split',
       ignoreWhitespace: data.ignoreWhitespace !== false,
+      lineWrap: data.lineWrap === true,
+      fontSize: clampFontSize(data.fontSize),
     };
   } catch {
     return {
-      ...DEFAULTS,
+      ...CONFIG_DEFAULTS,
     };
   }
 }
