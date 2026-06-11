@@ -1,6 +1,6 @@
 // Top toolbar: repo + compare selector on the left; icon actions on the right
-// (split/unified, ignore-whitespace, copy-for-LLM, approve-all, refresh), each
-// with a tooltip explaining what it does.
+// (split/unified toggle, ignore-whitespace, copy-for-LLM, approve-all,
+// refresh), each with a tooltip explaining what it does.
 
 import { AlignJustify, CheckCheck, ClipboardCopy, Columns2, Pilcrow, RefreshCw, Settings } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -9,7 +9,6 @@ import { CompareSelector } from './CompareSelector';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { Button } from './ui/button';
 import { Toggle } from './ui/toggle';
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 /** Wraps a control in a tooltip; the control becomes the tooltip trigger. */
@@ -57,34 +56,16 @@ export function Toolbar() {
       <ProjectSwitcher />
 
       <div className="ml-auto flex items-center gap-2">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          value={diffStyle}
-          onValueChange={(value) => {
-            if (value === 'split' || value === 'unified') {
-              setDiffStyle(value);
-            }
-          }}
-        >
-          <Hint label="Split view">
-            <ToggleGroupItem
-              value="split"
-              aria-label="Split view"
-            >
-              <Columns2 />
-            </ToggleGroupItem>
-          </Hint>
-          <Hint label="Unified view">
-            <ToggleGroupItem
-              value="unified"
-              aria-label="Unified view"
-            >
-              <AlignJustify />
-            </ToggleGroupItem>
-          </Hint>
-        </ToggleGroup>
+        <Hint label={diffStyle === 'split' ? 'Switch to unified view' : 'Switch to split view'}>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label={diffStyle === 'split' ? 'Switch to unified view' : 'Switch to split view'}
+            onClick={() => setDiffStyle(diffStyle === 'split' ? 'unified' : 'split')}
+          >
+            {diffStyle === 'split' ? <Columns2 /> : <AlignJustify />}
+          </Button>
+        </Hint>
 
         <Hint label={ignoreWhitespace ? 'Ignoring whitespace changes' : 'Showing whitespace changes'}>
           <Toggle
