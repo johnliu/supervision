@@ -36,6 +36,7 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: Appli
         {
           label: 'Hide Supervision',
           role: 'hide',
+          accelerator: 'CommandOrControl+H',
         },
         {
           type: 'separator',
@@ -43,6 +44,7 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: Appli
         {
           label: 'Quit Supervision',
           role: 'quit',
+          accelerator: 'CommandOrControl+Q',
         },
       ],
     },
