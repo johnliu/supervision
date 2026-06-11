@@ -1,12 +1,21 @@
 // Inline annotation content rendered by @pierre/diffs `renderAnnotation`:
 // `CommentThread` shows an existing comment; `CommentComposer` is the draft
 // editor opened when a line number is clicked.
+//
+// Both cards cap their width: 36rem for a readable measure, and never closer
+// than ~88px to their container's right edge — the strip the floating toolbar
+// (size-9 cells + p-1.5 + right-4) occupies — so the bar never covers them.
 
 import { useState } from 'react';
 import type { Comment } from '../../shared/types';
 import { type Draft, useReviewStore } from '../store';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+
+// Never wider than a readable measure, and never within the ~88px strip at
+// the container's right edge where the floating toolbar sits — clearance is
+// absolute; on very narrow panes the header's line label truncates to fit.
+const CARD_WIDTH = 'max-w-[min(36rem,calc(100%-88px))]';
 
 /** "line N" or "lines N–M" for a (possibly single-line) range. */
 function lineLabel(line: number, endLine?: number): string {
@@ -19,11 +28,15 @@ export function CommentThread({ comment }: { comment: Comment }) {
   const resolved = comment.status === 'resolved';
 
   return (
-    <div className="my-1 rounded-md border border-border bg-card p-2 text-sm text-card-foreground shadow-sm">
+    <div
+      className={`my-1 ${CARD_WIDTH} rounded-md border border-border bg-card p-2 text-sm text-card-foreground shadow-sm`}
+    >
       <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-        <span className={resolved ? 'text-emerald-500' : 'text-amber-500'}>{resolved ? 'Resolved' : 'Comment'}</span>
-        <span>· {lineLabel(comment.line, comment.endLine)}</span>
-        <div className="ml-auto flex gap-1">
+        <span className={resolved ? 'shrink-0 text-emerald-500' : 'shrink-0 text-amber-500'}>
+          {resolved ? 'Resolved' : 'Comment'}
+        </span>
+        <span className="min-w-0 truncate">· {lineLabel(comment.line, comment.endLine)}</span>
+        <div className="ml-auto flex shrink-0 gap-1">
           {resolved ? null : (
             <Button
               variant="ghost"
@@ -70,7 +83,7 @@ export function CommentComposer({ draft, onClose }: { draft: Draft; onClose: () 
   };
 
   return (
-    <div className="my-1 rounded-md border border-ring/50 bg-card p-2 shadow-sm">
+    <div className={`my-1 ${CARD_WIDTH} rounded-md border border-ring/50 bg-card p-2 shadow-sm`}>
       <Textarea
         autoFocus
         value={body}
