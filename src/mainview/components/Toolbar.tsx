@@ -324,7 +324,7 @@ export function Toolbar() {
 
       <ViewToggle />
 
-      <Hint label={lineWrap ? 'Wrapping long lines' : 'Scrolling long lines'}>
+      <Hint label={lineWrap ? 'Wrap lines' : 'Disable line wrap'}>
         <Toggle
           className={cn(CELL, 'min-w-9 p-0')}
           aria-label="Wrap long lines"
