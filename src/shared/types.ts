@@ -14,8 +14,9 @@ export type CompareSpec =
   | {
       kind: 'range';
       base: string;
-      head: string;
-    }; // base..head (branch vs branch, etc.)
+      /** A ref, or null for the working tree as the newer endpoint. */
+      head: string | null;
+    }; // base..head (branch vs branch, commit vs working tree, etc.)
 
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
 

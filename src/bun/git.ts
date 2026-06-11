@@ -376,6 +376,81 @@ async function refFileChanges(repoRoot: string, base: string, head: string): Pro
   );
 }
 
+/**
+ * File changes from `base` to the working tree: tracked changes via a one-arg
+ * `git diff <base>` (worktree vs base, staged or not), plus untracked files —
+ * which diff never reports — the same way the working review finds them.
+ */
+async function workingRangeChanges(repoRoot: string, base: string): Promise<FileChange[]> {
+  const [ns, untrackedRes] = await Promise.all([
+    git(repoRoot, [
+      'diff',
+      '--name-status',
+      '-z',
+      base,
+    ]),
+    git(repoRoot, [
+      'ls-files',
+      '--others',
+      '--exclude-standard',
+      '-z',
+    ]),
+  ]);
+  if (ns.exitCode !== 0) {
+    throw new Error(ns.stderr.trim() || `git diff ${base} failed`);
+  }
+  const entries = parseNameStatusZ(ns.stdout);
+  const untrackedPaths = untrackedRes.stdout.split('\0').filter((p) => p.length > 0);
+  const [tracked, untracked] = await Promise.all([
+    Promise.all(
+      entries.map(async (entry): Promise<FileChange> => {
+        const paths = entry.oldPath
+          ? [
+              entry.oldPath,
+              entry.path,
+            ]
+          : [
+              entry.path,
+            ];
+        const numstat = await git(repoRoot, [
+          'diff',
+          '--numstat',
+          base,
+          '--',
+          ...paths,
+        ]);
+        const stat = parseNumstat(numstat.stdout);
+        const [oldContents, newContents] = stat.binary
+          ? [
+              '',
+              '',
+            ]
+          : await Promise.all([
+              showContents(repoRoot, base, entry.oldPath ?? entry.path),
+              entry.status === 'deleted' ? Promise.resolve('') : workingFile(repoRoot, entry.path),
+            ]);
+        return {
+          path: entry.path,
+          oldPath: entry.oldPath,
+          status: entry.status,
+          oldContents,
+          newContents,
+          additions: stat.additions,
+          deletions: stat.deletions,
+          binary: stat.binary,
+          staged: false,
+          untracked: false,
+        };
+      }),
+    ),
+    Promise.all(untrackedPaths.map((p) => untrackedChange(repoRoot, p))),
+  ]);
+  return [
+    ...tracked,
+    ...untracked,
+  ];
+}
+
 export async function getReview(cwd: string, compare: CompareSpec): Promise<ReviewModel> {
   const repoRoot = await getRepoRoot(cwd);
   if (!repoRoot) {
@@ -385,18 +460,15 @@ export async function getReview(cwd: string, compare: CompareSpec): Promise<Revi
     return getWorkingReview(repoRoot);
   }
 
-  const [base, head] =
-    compare.kind === 'commit'
-      ? [
-          await resolveBase(repoRoot, compare.ref),
-          compare.ref,
-        ]
-      : [
-          compare.base,
-          compare.head,
-        ];
   // Ref comparisons have no index, so everything is "unreviewed".
-  const files = await refFileChanges(repoRoot, base, head);
+  let files: FileChange[];
+  if (compare.kind === 'commit') {
+    files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.ref), compare.ref);
+  } else if (compare.head === null) {
+    files = await workingRangeChanges(repoRoot, compare.base);
+  } else {
+    files = await refFileChanges(repoRoot, compare.base, compare.head);
+  }
   return {
     repoRoot,
     compare,
