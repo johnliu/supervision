@@ -72,6 +72,9 @@ const mainWindow = new BrowserWindow({
     x: Number(process.env.SUPERVISION_FRAME_X ?? 100),
     y: Number(process.env.SUPERVISION_FRAME_Y ?? 100),
   },
+  // Modern macOS chrome: transparent titlebar, traffic lights inset over the
+  // content (the sidebar leaves room for them via .platform-desktop padding).
+  titleBarStyle: 'hiddenInset',
   rpc,
 });
 

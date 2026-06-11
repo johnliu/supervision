@@ -47,7 +47,7 @@ export default function App() {
     <TooltipProvider>
       <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
         {error ? (
-          <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+          <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive [.platform-desktop_&]:pt-9">
             {error}
           </div>
         ) : null}

@@ -308,7 +308,8 @@ export function Sidebar() {
       className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
       style={TREE_STYLE}
     >
-      <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-1">
+      {/* Desktop: start below the hiddenInset traffic lights. */}
+      <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-1 [.platform-desktop_&]:mt-9">
         {TABS.map((entry) => (
           <button
             key={entry.id}
