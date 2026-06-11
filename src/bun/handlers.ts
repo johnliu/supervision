@@ -10,6 +10,7 @@ import type { SetRepoResult } from '../shared/types';
 import * as comments from './comments';
 import * as config from './config';
 import * as git from './git';
+import { resolveLaunchRepo } from './launchTarget';
 import * as recent from './recent';
 
 type BunRequests = SupervisionRPC['bun']['requests'];
@@ -38,8 +39,8 @@ export interface SupervisionHandlers {
 }
 
 export function createSupervisionHandlers(options: SupervisionHandlersOptions = {}): SupervisionHandlers {
-  /** The repo under review. Defaults to an env override, else the launch cwd. */
-  let currentRepo = process.env.SUPERVISION_REPO ?? process.cwd();
+  /** The repo under review: CLI directory arg, else env override, else cwd. */
+  let currentRepo = resolveLaunchRepo();
 
   /** Resolve the git root (comments live there), falling back to currentRepo. */
   const repoRoot = async (): Promise<string> => (await git.getRepoRoot(currentRepo)) ?? currentRepo;

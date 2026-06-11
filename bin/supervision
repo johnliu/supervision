@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Launch Supervision pointed at a repo: `supervision [dir]` (default: cwd).
+#
+# Execs the bundle's launcher directly rather than `open -a` so both the
+# directory argument and SUPERVISION_REPO reach the Bun process (open(1)
+# strips the environment and arguments). SUPERVISION_APP overrides bundle
+# discovery; otherwise installed apps win over this repo's dev builds.
+set -euo pipefail
+
+dir="${1:-$PWD}"
+if [[ ! -d "$dir" ]]; then
+  echo "supervision: not a directory: $dir" >&2
+  exit 1
+fi
+dir="$(cd "$dir" && pwd)"
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+candidates=(
+  "${SUPERVISION_APP:-}"
+  "$HOME/Applications/Supervision.app"
+  "/Applications/Supervision.app"
+  "$repo_root"/build/*/Supervision*.app
+)
+
+app=""
+for candidate in "${candidates[@]}"; do
+  if [[ -n "$candidate" && -d "$candidate" ]]; then
+    app="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$app" ]]; then
+  echo "supervision: no app bundle found — build one (bun run dev / bun run build:canary) or set SUPERVISION_APP" >&2
+  exit 1
+fi
+
+exec env SUPERVISION_REPO="$dir" "$app/Contents/MacOS/launcher" "$dir"

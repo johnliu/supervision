@@ -44,6 +44,18 @@ bun run build
 bun run build:prod
 ```
 
+## Opening a repo from the command line
+
+`bin/supervision [dir]` launches the app pointed at `dir` (default: the
+current directory). It finds an installed `Supervision.app` (or this repo's
+dev build; `SUPERVISION_APP` overrides) and passes the directory through both
+argv and `SUPERVISION_REPO`. Symlink it onto your PATH:
+
+```bash
+ln -s "$PWD/bin/supervision" /usr/local/bin/supervision
+supervision ~/some/repo
+```
+
 ## How HMR Works
 
 When you run `bun run dev:hmr`:
