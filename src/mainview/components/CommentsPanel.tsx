@@ -30,10 +30,23 @@ function CommentRow({ comment }: { comment: Comment }) {
       )}
     >
       <span className="flex min-w-0 items-center gap-1.5 text-[0.65rem] text-muted-foreground">
-        <span className={cn('size-1.5 shrink-0 rounded-full', resolved ? 'bg-muted-foreground/50' : 'bg-primary')} />
+        <span
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            resolved ? 'bg-muted-foreground/50' : comment.stale ? 'bg-amber-500' : 'bg-primary',
+          )}
+        />
         <span className="truncate font-mono">
           {comment.path}:{lineLabel(comment)}
         </span>
+        {comment.stale ? (
+          <span
+            className="shrink-0 text-amber-500"
+            title="The file has changed since this comment was made — its line numbers may no longer point at the commented code."
+          >
+            stale
+          </span>
+        ) : null}
       </span>
       <span className={cn('line-clamp-2 text-xs', resolved && 'text-muted-foreground line-through')}>
         {comment.body}
@@ -42,8 +55,28 @@ function CommentRow({ comment }: { comment: Comment }) {
   );
 }
 
+function SectionHeader({ label, count, onClear }: { label: string; count: number; onClear: () => void }) {
+  return (
+    <div className="flex items-center justify-between px-2 py-1">
+      {/* Same type treatment as the Files sidebar's Unstaged/Staged headers. */}
+      <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        {label} <span className="font-normal text-muted-foreground/60">{count}</span>
+      </div>
+      <button
+        type="button"
+        className="text-[0.65rem] text-muted-foreground/70 transition-colors hover:text-destructive"
+        title={`Delete all ${label.toLowerCase()} comments`}
+        onClick={onClear}
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
 export function CommentsPanel() {
   const comments = useReviewStore((state) => state.comments);
+  const clearComments = useReviewStore((state) => state.clearComments);
   const open = comments.filter((comment) => comment.status === 'open').sort(byLocation);
   const resolved = comments.filter((comment) => comment.status === 'resolved').sort(byLocation);
 
@@ -51,9 +84,7 @@ export function CommentsPanel() {
     return (
       <div className="flex flex-col items-center gap-2 px-3 py-8 text-center text-xs text-muted-foreground">
         <MessageSquare className="size-4 opacity-60" />
-        <span>
-          No comments yet. Select lines in the diff and press <kbd className="font-mono">c</kbd>.
-        </span>
+        <span>No comments yet.</span>
       </div>
     );
   }
@@ -62,9 +93,11 @@ export function CommentsPanel() {
     <div className="flex flex-col gap-2 px-2 py-1">
       {open.length > 0 ? (
         <div className="flex flex-col gap-0.5">
-          <div className="px-2 py-1 text-[0.65rem] font-semibold tracking-wide text-muted-foreground uppercase">
-            Open <span className="font-normal opacity-60">{open.length}</span>
-          </div>
+          <SectionHeader
+            label="Open"
+            count={open.length}
+            onClear={() => void clearComments('open')}
+          />
           {open.map((comment) => (
             <CommentRow
               key={comment.id}
@@ -75,9 +108,11 @@ export function CommentsPanel() {
       ) : null}
       {resolved.length > 0 ? (
         <div className="flex flex-col gap-0.5">
-          <div className="px-2 py-1 text-[0.65rem] font-semibold tracking-wide text-muted-foreground uppercase">
-            Resolved <span className="font-normal opacity-60">{resolved.length}</span>
-          </div>
+          <SectionHeader
+            label="Resolved"
+            count={resolved.length}
+            onClear={() => void clearComments('resolved')}
+          />
           {resolved.map((comment) => (
             <CommentRow
               key={comment.id}

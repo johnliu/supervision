@@ -25,7 +25,21 @@ function lineLabel(line: number, endLine?: number): string {
 export function CommentThread({ comment }: { comment: Comment }) {
   const resolveComment = useReviewStore((state) => state.resolveComment);
   const deleteComment = useReviewStore((state) => state.deleteComment);
+  const replyToComment = useReviewStore((state) => state.replyToComment);
+  const [replying, setReplying] = useState(false);
+  const [reply, setReply] = useState('');
   const resolved = comment.status === 'resolved';
+  const replies = comment.replies ?? [];
+
+  const submitReply = async () => {
+    const trimmed = reply.trim();
+    if (!trimmed) {
+      return;
+    }
+    await replyToComment(comment.id, trimmed);
+    setReply('');
+    setReplying(false);
+  };
 
   return (
     <div
@@ -35,7 +49,20 @@ export function CommentThread({ comment }: { comment: Comment }) {
         <span className={resolved ? 'shrink-0 text-emerald-500' : 'shrink-0 text-amber-500'}>
           {resolved ? 'Resolved' : 'Comment'}
         </span>
-        <span className="min-w-0 truncate">· {lineLabel(comment.line, comment.endLine)}</span>
+        <span
+          className="min-w-0 truncate"
+          title={lineLabel(comment.line, comment.endLine)}
+        >
+          · {lineLabel(comment.line, comment.endLine)}
+        </span>
+        {comment.stale ? (
+          <span
+            className="shrink-0 rounded-sm bg-amber-500/15 px-1 py-px text-[0.65rem] text-amber-500"
+            title="The file has changed since this comment was made — its line numbers may no longer point at the commented code."
+          >
+            stale
+          </span>
+        ) : null}
         <div className="ml-auto flex shrink-0 gap-1">
           {resolved ? null : (
             <Button
@@ -57,12 +84,65 @@ export function CommentThread({ comment }: { comment: Comment }) {
         </div>
       </div>
       <div className="whitespace-pre-wrap">{comment.body}</div>
-      {comment.response ? (
-        <div className="mt-2 rounded-md bg-muted/40 px-2 py-1.5">
-          <div className="mb-0.5 text-[0.65rem] font-medium tracking-wide text-sky-400 uppercase">Agent</div>
-          <div className="whitespace-pre-wrap text-xs text-foreground/90">{comment.response}</div>
+      {replies.map((entry) => (
+        <div
+          key={entry.id}
+          className="mt-2 rounded-md bg-muted/40 px-2 py-1.5"
+        >
+          <div
+            className={`mb-0.5 text-[0.65rem] font-medium tracking-wide uppercase ${
+              entry.author === 'agent' ? 'text-sky-400' : 'text-muted-foreground'
+            }`}
+          >
+            {entry.author === 'agent' ? 'Agent' : 'You'}
+          </div>
+          <div className="whitespace-pre-wrap text-xs text-foreground/90">{entry.body}</div>
         </div>
-      ) : null}
+      ))}
+      {replying ? (
+        <div className="mt-2">
+          <Textarea
+            autoFocus
+            value={reply}
+            onChange={(event) => setReply(event.target.value)}
+            placeholder="Reply (⌘/Ctrl+Enter to send)"
+            className="h-12 resize-none text-xs"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                void submitReply();
+              } else if (event.key === 'Escape') {
+                setReplying(false);
+              }
+            }}
+          />
+          <div className="mt-1.5 flex justify-end gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setReplying(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void submitReply()}
+            >
+              Reply
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-xs text-muted-foreground"
+            onClick={() => setReplying(true)}
+          >
+            Reply…
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

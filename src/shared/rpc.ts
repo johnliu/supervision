@@ -80,6 +80,21 @@ export type SupervisionRPC = {
         };
         response: Comment[];
       };
+      /** Append a reviewer reply to a comment's thread. */
+      replyToComment: {
+        params: {
+          id: string;
+          body: string;
+        };
+        response: Comment[];
+      };
+      /** Delete every comment with the given status (bulk clear). */
+      clearComments: {
+        params: {
+          status: 'open' | 'resolved';
+        };
+        response: Comment[];
+      };
       deleteComment: {
         params: {
           id: string;

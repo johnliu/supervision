@@ -83,6 +83,28 @@ export interface CommitInfo {
   authorDate: string;
 }
 
+/**
+ * The repo state a comment's line numbers were recorded against. Captured at
+ * creation; the feedback skill refreshes it when it moves the commented code.
+ * Either sha may be null: `head` in a repo with no commits, `blob` when the
+ * file is absent from the working tree (e.g. a comment on a deleted file).
+ */
+export interface CommentAnchor {
+  /** `git rev-parse HEAD` at the time the anchor was recorded. */
+  head: string | null;
+  /** `git hash-object <path>` of the working-tree file at that time. */
+  blob: string | null;
+}
+
+/** One reply in the thread under a comment. */
+export interface CommentReply {
+  id: string;
+  /** 'agent' = written by the feedback skill; 'user' = the reviewer. */
+  author: 'agent' | 'user';
+  body: string;
+  createdAt: string;
+}
+
 export interface Comment {
   id: string;
   path: string;
@@ -96,8 +118,16 @@ export interface Comment {
   body: string;
   status: 'open' | 'resolved';
   createdAt: string;
-  /** The agent's reply, written into comments.json by the feedback skill. */
+  /** Legacy single agent reply. Still accepted from older skills, but folded
+   * into `replies` on read — app code only ever sees `replies`. */
   response?: string;
+  /** The conversation under the comment, oldest first. */
+  replies?: CommentReply[];
+  /** Repo state the line numbers point into; absent on pre-anchor comments. */
+  anchor?: CommentAnchor;
+  /** Derived on read, never persisted: the file changed since the anchor was
+   * recorded, so the line numbers may no longer point at the commented code. */
+  stale?: boolean;
 }
 
 /** Shape of `.supervision/comments.json` — the source of truth + skill input. */

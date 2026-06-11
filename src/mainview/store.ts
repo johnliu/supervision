@@ -113,7 +113,11 @@ interface ReviewState {
     body: string;
   }) => Promise<void>;
   resolveComment: (id: string) => Promise<void>;
+  /** Append a reviewer reply to a comment's thread. */
+  replyToComment: (id: string, body: string) => Promise<void>;
   deleteComment: (id: string) => Promise<void>;
+  /** Delete every open or every resolved comment (the panel's "Clear"). */
+  clearComments: (status: Comment['status']) => Promise<void>;
   exportReview: () => Promise<{
     markdown: string;
     path: string;
@@ -538,9 +542,28 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       });
     },
 
+    replyToComment: async (id, body) => {
+      const comments = await api.replyToComment({
+        id,
+        body,
+      });
+      set({
+        comments,
+      });
+    },
+
     deleteComment: async (id) => {
       const comments = await api.deleteComment({
         id,
+      });
+      set({
+        comments,
+      });
+    },
+
+    clearComments: async (status) => {
+      const comments = await api.clearComments({
+        status,
       });
       set({
         comments,

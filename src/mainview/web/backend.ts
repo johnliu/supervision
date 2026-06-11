@@ -208,9 +208,36 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       );
       return clone(comments);
     },
+    replyToComment: async (params) => {
+      await wait();
+      if (params) {
+        comments = comments.map((comment) =>
+          comment.id === params.id
+            ? {
+                ...comment,
+                replies: [
+                  ...(comment.replies ?? []),
+                  {
+                    id: crypto.randomUUID(),
+                    author: 'user' as const,
+                    body: params.body,
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              }
+            : comment,
+        );
+      }
+      return clone(comments);
+    },
     deleteComment: async (params) => {
       await wait();
       comments = comments.filter((comment) => comment.id !== params?.id);
+      return clone(comments);
+    },
+    clearComments: async (params) => {
+      await wait();
+      comments = comments.filter((comment) => comment.status !== params?.status);
       return clone(comments);
     },
     exportMarkdown: async () => {

@@ -105,7 +105,9 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
     getComments: async () => comments.readComments(await repoRoot()),
     saveComment: async (input) => comments.addComment(await repoRoot(), input),
     resolveComment: async ({ id }) => comments.resolveComment(await repoRoot(), id),
+    replyToComment: async ({ id, body }) => comments.replyToComment(await repoRoot(), id, body),
     deleteComment: async ({ id }) => comments.deleteComment(await repoRoot(), id),
+    clearComments: async ({ status }) => comments.clearComments(await repoRoot(), status),
     exportMarkdown: async () => {
       const result = await comments.exportMarkdown(await repoRoot());
       // Copy on the host side when the transport has a clipboard —

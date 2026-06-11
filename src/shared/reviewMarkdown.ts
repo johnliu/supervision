@@ -24,7 +24,14 @@ export function renderMarkdown(repoRoot: string, comments: Comment[]): string {
         comment.endLine && comment.endLine !== comment.line
           ? `${file}:${comment.line}-${comment.endLine}`
           : `${file}:${comment.line}`;
-      lines.push(`- **${loc}** (${comment.side}): ${comment.body}`);
+      // "stale" warns the reader that the file changed after the comment was
+      // anchored, so the line numbers may point at the wrong code.
+      lines.push(`- **${loc}** (${comment.side}${comment.stale ? ', stale' : ''}): ${comment.body}`);
+      // The thread so far — earlier agent answers and reviewer follow-ups are
+      // context for whoever acts on the comment next.
+      for (const reply of comment.replies ?? []) {
+        lines.push(`  - ${reply.author === 'agent' ? 'agent' : 'reviewer'}: ${reply.body}`);
+      }
     }
     lines.push('');
   }

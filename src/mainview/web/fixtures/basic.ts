@@ -32,6 +32,21 @@ export function basic(): FixtureData {
       body: 'Why double here?',
       status: 'open',
       createdAt: '2026-06-01T10:00:00.000Z',
+      // A back-and-forth thread, for eyeballing reply rendering in web mode.
+      replies: [
+        {
+          id: 'fixture-reply-1',
+          author: 'agent',
+          body: 'The sensor reports half-steps, so the raw value is doubled before display.',
+          createdAt: '2026-06-01T10:02:00.000Z',
+        },
+        {
+          id: 'fixture-reply-2',
+          author: 'user',
+          body: 'Then pull the 2 into a named constant.',
+          createdAt: '2026-06-01T10:03:00.000Z',
+        },
+      ],
     },
     {
       id: 'fixture-comment-2',
@@ -43,6 +58,13 @@ export function basic(): FixtureData {
       body: 'This whole block needs a bounds check.',
       status: 'open',
       createdAt: '2026-06-01T10:05:00.000Z',
+      // The real backend derives `stale` from the anchor on read; the fixture
+      // pins both so web mode renders the stale badge.
+      anchor: {
+        head: '1111111111111111111111111111111111111111',
+        blob: '2222222222222222222222222222222222222222',
+      },
+      stale: true,
     },
     {
       id: 'fixture-comment-3',

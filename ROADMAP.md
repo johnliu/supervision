@@ -5,19 +5,6 @@ pieces it touches so it can be picked up cleanly.
 
 ## Up next
 
-- **Comment anchoring (SHA / staleness).** A comment pins a line number, but
-  the file keeps moving — after a few agent iterations the anchor may point at
-  the wrong code, and nothing says so. Record context at creation time in
-  `comments.json`: the working-tree-relative state it was made against (HEAD
-  sha plus the file's blob sha, both cheap via `git rev-parse HEAD` and
-  `git hash-object <file>` in `src/bun/comments.ts`). On read, compare the
-  stored blob sha to the current file: unchanged → anchor exact; changed →
-  mark the comment *stale* in the UI (badge in `CommentThread` / the Comments
-  tab) and optionally re-anchor by diffing the stored line's neighborhood
-  against the new contents (the parsed diff from `@pierre/diffs` already has
-  the machinery). The skill contract would tell agents to leave `status`
-  untouched but refresh the anchor when they edit the commented region.
-
 - **Theme support.** The palette already flows through CSS custom properties
   (`index.css`), the tree restyles via `--trees-*-override` (`Sidebar.tsx`),
   and the diff takes a theme pair (`THEME` in `DiffPane.tsx`, currently pinned
@@ -37,6 +24,12 @@ pieces it touches so it can be picked up cleanly.
   its own worktree.
 
 ## Possible follow-ups
+
+- **Comment re-anchoring.** Comments now record an anchor (HEAD + blob sha)
+  and read back as *stale* when the file drifts; the next step is moving the
+  anchor instead of just flagging it — diff the stored line's neighborhood
+  against the new contents (the parsed diff from `@pierre/diffs` already has
+  the machinery) and update `line`/`endLine` automatically.
 
 - **Live comment reload.** The watcher deliberately ignores `.supervision/`
   (see `IGNORED_SEGMENTS` in `src/bun/watcher.ts`), so an agent's responses
