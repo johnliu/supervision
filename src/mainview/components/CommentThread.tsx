@@ -57,6 +57,12 @@ export function CommentThread({ comment }: { comment: Comment }) {
         </div>
       </div>
       <div className="whitespace-pre-wrap">{comment.body}</div>
+      {comment.response ? (
+        <div className="mt-2 rounded-md bg-muted/40 px-2 py-1.5">
+          <div className="mb-0.5 text-[0.65rem] font-medium tracking-wide text-sky-400 uppercase">Agent</div>
+          <div className="whitespace-pre-wrap text-xs text-foreground/90">{comment.response}</div>
+        </div>
+      ) : null}
     </div>
   );
 }

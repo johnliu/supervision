@@ -44,6 +44,14 @@ export interface FileChange {
   untracked: boolean;
 }
 
+/** Install state of the Claude Code feedback skill (user-level). */
+export interface SkillStatus {
+  installed: boolean;
+  /** The installed copy matches the version bundled with this build. */
+  upToDate: boolean;
+  path: string;
+}
+
 /** Identity of the repo under review, shown in the sidebar footer. */
 export interface RepoInfo {
   /** Git root under review (a linked worktree's own root when applicable). */
@@ -88,6 +96,8 @@ export interface Comment {
   body: string;
   status: 'open' | 'resolved';
   createdAt: string;
+  /** The agent's reply, written into comments.json by the feedback skill. */
+  response?: string;
 }
 
 /** Shape of `.supervision/comments.json` — the source of truth + skill input. */

@@ -11,7 +11,8 @@ description: >-
 Supervision (a local code-review tool) records review comments at
 `.supervision/comments.json` in the repo root. Each open comment is an
 actionable instruction anchored to a file and line. This skill reads those
-comments, applies the requested changes, and marks them resolved.
+comments, applies the requested changes, and responds to each one directly in
+the JSON — Supervision renders your `response` inline under the comment.
 
 ## The contract
 
@@ -30,8 +31,9 @@ comments, applies the requested changes, and marks them resolved.
       "endLine": 45,
       "endSide": "additions",
       "body": "extract this into a helper",
-      "status": "open",
-      "createdAt": "2026-06-05T09:00:00.000Z"
+      "status": "resolved",
+      "createdAt": "2026-06-05T09:00:00.000Z",
+      "response": "Pulled the block into a computeRetryDelay() helper."
     }
   ]
 }
@@ -45,6 +47,9 @@ comments, applies the requested changes, and marks them resolved.
   `line`..`endLine` (inclusive); treat the whole range as the target. When they
   are absent the comment is anchored to the single `line`.
 - Only act on comments with `"status": "open"`. Ignore `"resolved"` ones.
+- `response` is yours to write: one or two sentences on what you changed — or
+  why you didn't — addressed to the reviewer. Always respond in the JSON
+  itself; don't rely on chat output the reviewer may never see.
 
 ## Steps
 
@@ -54,20 +59,8 @@ comments, applies the requested changes, and marks them resolved.
    comment's `line`.
 3. Make the change the comment body requests. Keep edits minimal and scoped to
    the feedback; do not opportunistically refactor unrelated code.
-4. After successfully applying a comment, set its `status` to `"resolved"` in
-   `.supervision/comments.json` (preserve every other field and the file
-   shape). If you cannot or should not apply a comment, leave it `open` and
-   note why to the user.
-5. Summarize what you changed, grouped by file, and list any comments you left
-   open with the reason.
-
-## Notes
-
-- The user reviews iteratively: they stage (approve) changes they like in
-  Supervision, then re-run their agent. Re-read `comments.json` each run —
-  it is the source of truth.
-- Do not delete comments; only flip `open` → `resolved`. The user may want to
-  see resolved history in Supervision.
-- If a `line` no longer matches because the file moved on, use the comment
-  `body` and surrounding context to find the right spot; if you truly cannot,
-  leave it open and say so.
+4. After applying a comment, update it in `.supervision/comments.json`: set
+   `"status"` to `"resolved"` and write a short `response` describing the
+   change you made (preserve every other field and the file shape).
+5. If you cannot or should not apply a comment, leave it `"open"` and set
+   `response` to explain why, so the reviewer sees the reasoning in the app.

@@ -77,6 +77,7 @@ const FIXTURE_LOG: CommitInfo[] = [
 export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendOptions = {}): FixtureBackendHandle {
   let model = clone(fixture.model);
   let comments = clone(fixture.comments);
+  let skillInstalled = false;
   const config: SupervisionConfig = {
     ...CONFIG_DEFAULTS,
     ...fixture.config,
@@ -274,6 +275,23 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
     getRecentProjects: async () => {
       await wait();
       return recents();
+    },
+    getSkillStatus: async () => {
+      await wait();
+      return {
+        installed: skillInstalled,
+        upToDate: skillInstalled,
+        path: '~/.claude/skills/supervision-feedback/SKILL.md',
+      };
+    },
+    installSkill: async () => {
+      await wait();
+      skillInstalled = true;
+      return {
+        installed: true,
+        upToDate: true,
+        path: '~/.claude/skills/supervision-feedback/SKILL.md',
+      };
     },
   };
 

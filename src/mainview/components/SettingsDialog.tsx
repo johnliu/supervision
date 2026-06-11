@@ -4,8 +4,12 @@
 
 import { AlignJustify, Columns2, X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
+import { useEffect, useState } from 'react';
+import type { SkillStatus } from '../../shared/types';
+import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
+import { Button } from './ui/button';
 import { Switch } from './ui/switch';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
@@ -17,6 +21,68 @@ function Row({ title, description, children }: { title: string; description: str
         <div className="text-xs text-muted-foreground">{description}</div>
       </div>
       {children}
+    </div>
+  );
+}
+
+// Install/update the Claude Code feedback skill so an agent can apply the
+// review comments and respond in comments.json. Status is fetched each time
+// the dialog opens — the user may (un)install outside the app.
+function SkillRow({ open }: { open: boolean }) {
+  const [status, setStatus] = useState<SkillStatus | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let cancelled = false;
+    api
+      .getSkillStatus()
+      .then((next) => {
+        if (!cancelled) {
+          setStatus(next);
+        }
+      })
+      .catch(() => setStatus(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+  ]);
+
+  const install = async () => {
+    try {
+      setStatus(await api.installSkill());
+    } catch (error) {
+      console.error('Skill install failed', error);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-6 border-t border-border pt-4">
+      <div className="min-w-0">
+        <div className="text-sm font-medium">Claude Code skill</div>
+        <div className="text-xs text-muted-foreground">
+          Teaches the agent to apply comments and reply in comments.json.
+        </div>
+        {status ? (
+          <div
+            className="mt-0.5 truncate font-mono text-[0.65rem] text-muted-foreground/70"
+            title={status.path}
+          >
+            {status.path}
+          </div>
+        ) : null}
+      </div>
+      <Button
+        variant={status?.upToDate ? 'ghost' : 'outline'}
+        size="sm"
+        disabled={!status || status.upToDate}
+        onClick={() => void install()}
+      >
+        {status?.upToDate ? 'Installed' : status?.installed ? 'Update' : 'Install'}
+      </Button>
     </div>
   );
 }
@@ -111,6 +177,8 @@ export function SettingsDialog() {
             >
               <FontSizeStepper />
             </Row>
+
+            <SkillRow open={settings} />
           </div>
         </Dialog.Content>
       </Dialog.Portal>

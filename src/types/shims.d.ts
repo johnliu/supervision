@@ -5,3 +5,10 @@
 // typecheck stays green. `skipLibCheck` does not help here because the offending
 // file is `.ts` source, not a `.d.ts`.
 declare module 'three';
+
+// Bun text imports (`with { type: 'text' }`) resolve markdown to its contents;
+// tsc only needs to know the module's shape.
+declare module '*.md' {
+  const text: string;
+  export default text;
+}

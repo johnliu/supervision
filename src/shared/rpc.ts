@@ -17,6 +17,7 @@ import type {
   RepoInfo,
   ReviewModel,
   SetRepoResult,
+  SkillStatus,
   SupervisionConfig,
 } from './types';
 
@@ -116,6 +117,16 @@ export type SupervisionRPC = {
       getRecentProjects: {
         params: undefined;
         response: string[];
+      };
+      /** Install state of the Claude Code feedback skill (user-level). */
+      getSkillStatus: {
+        params: undefined;
+        response: SkillStatus;
+      };
+      /** Write the bundled skill to ~/.claude/skills; returns the new state. */
+      installSkill: {
+        params: undefined;
+        response: SkillStatus;
       };
     };
     messages: Record<never, never>;

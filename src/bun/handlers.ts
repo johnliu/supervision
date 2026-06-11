@@ -12,6 +12,7 @@ import * as config from './config';
 import * as git from './git';
 import { resolveLaunchRepo } from './launchTarget';
 import * as recent from './recent';
+import * as skill from './skill';
 
 type BunRequests = SupervisionRPC['bun']['requests'];
 
@@ -135,6 +136,8 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       return switchRepo(chosen);
     },
     getRecentProjects: async () => recent.readRecentProjects(),
+    getSkillStatus: async () => skill.getSkillStatus(),
+    installSkill: async () => skill.installSkill(),
   };
 
   return {
