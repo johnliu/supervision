@@ -234,6 +234,7 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
         config.ignoreWhitespace = input.ignoreWhitespace;
         config.lineWrap = input.lineWrap;
         config.fontSize = input.fontSize;
+        config.editor = input.editor;
       }
       return {
         ...config,

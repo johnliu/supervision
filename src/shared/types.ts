@@ -107,6 +107,9 @@ export interface CommentsFile {
   comments: Comment[];
 }
 
+/** Editors "Open in editor" can target (see EDITORS in shared/config.ts). */
+export type EditorId = 'open' | 'cursor' | 'code' | 'zed' | 'subl';
+
 /** User preferences persisted to `.supervision/config.json`. */
 export interface SupervisionConfig {
   diffStyle: 'split' | 'unified';
@@ -115,6 +118,8 @@ export interface SupervisionConfig {
   lineWrap: boolean;
   /** Diff font size in pixels (see shared/config.ts for bounds). */
   fontSize: number;
+  /** Where "Open in editor" sends files ('open' = system default app). */
+  editor: EditorId;
 }
 
 /**

@@ -3,7 +3,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { CONFIG_DEFAULTS, clampFontSize } from '../shared/config';
+import { CONFIG_DEFAULTS, clampEditor, clampFontSize } from '../shared/config';
 import type { SupervisionConfig } from '../shared/types';
 
 function configPath(repoRoot: string): string {
@@ -24,6 +24,7 @@ export async function readConfig(repoRoot: string): Promise<SupervisionConfig> {
       ignoreWhitespace: data.ignoreWhitespace !== false,
       lineWrap: data.lineWrap === true,
       fontSize: clampFontSize(data.fontSize),
+      editor: clampEditor(data.editor),
     };
   } catch {
     return {

@@ -139,7 +139,10 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
     getRecentProjects: async () => recent.readRecentProjects(),
     getSkillStatus: async () => skill.getSkillStatus(),
     installSkill: async () => skill.installSkill(),
-    openInEditor: async ({ path: relPath, line }) => editor.openInEditor(await repoRoot(), relPath, line),
+    openInEditor: async ({ path: relPath, line }) => {
+      const root = await repoRoot();
+      return editor.openInEditor(root, relPath, line, (await config.readConfig(root)).editor);
+    },
   };
 
   return {

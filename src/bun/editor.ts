@@ -1,25 +1,60 @@
-// Open a file (optionally at a line) in the user's code editor. Discovery:
-// SUPERVISION_EDITOR names a CLI; otherwise the first common editor CLI on
-// PATH; otherwise macOS `open` with the system default app.
+// Open a file (optionally at a line) in the editor the user picked in
+// settings. The editor's CLI is resolved against an augmented PATH — apps
+// launched from the Finder/Dock inherit a minimal one without /usr/local/bin
+// or /opt/homebrew/bin, which is exactly where editor CLI shims live. When
+// the shim isn't installed at all, fall back to `open -a <App>` (loses the
+// line number but still lands in the right editor).
 
 import { join } from 'node:path';
+import { EDITORS } from '../shared/config';
+import type { EditorId } from '../shared/types';
 
-const CANDIDATES = [
-  'cursor',
-  'code',
-  'zed',
-  'subl',
-];
+const CLI_PATH = [
+  process.env.PATH,
+  '/usr/local/bin',
+  '/opt/homebrew/bin',
+]
+  .filter(Boolean)
+  .join(':');
 
-/** CLIs in the VS Code family want `--goto file:line`; the rest take file:line. */
-function editorArgs(editor: string, file: string, line?: number): string[] {
+const defaultWhich = (cmd: string): string | null =>
+  Bun.which(cmd, {
+    PATH: CLI_PATH,
+  });
+
+/** The argv to spawn for `editorId`, given a `which` resolver (injectable for tests). */
+export function resolveEditorCommand(
+  editorId: EditorId,
+  file: string,
+  line: number | undefined,
+  which: (cmd: string) => string | null = defaultWhich,
+): string[] {
+  const spec = EDITORS.find((editor) => editor.id === editorId);
+  if (!spec || spec.id === 'open' || !spec.app) {
+    return [
+      'open',
+      file,
+    ];
+  }
+  const cli = which(spec.id);
+  if (!cli) {
+    return [
+      'open',
+      '-a',
+      spec.app,
+      file,
+    ];
+  }
   const target = line ? `${file}:${line}` : file;
-  return editor === 'code' || editor === 'cursor'
+  // The VS Code family wants --goto; zed/subl take file:line directly.
+  return spec.id === 'code' || spec.id === 'cursor'
     ? [
+        cli,
         '--goto',
         target,
       ]
     : [
+        cli,
         target,
       ];
 }
@@ -27,25 +62,14 @@ function editorArgs(editor: string, file: string, line?: number): string[] {
 export function openInEditor(
   repoRoot: string,
   relPath: string,
-  line?: number,
+  line: number | undefined,
+  editorId: EditorId,
 ): {
   ok: boolean;
   error?: string;
 } {
-  const file = join(repoRoot, relPath);
-  const editor = process.env.SUPERVISION_EDITOR ?? CANDIDATES.find((cmd) => Bun.which(cmd));
   try {
-    if (editor && Bun.which(editor)) {
-      Bun.spawn([
-        editor,
-        ...editorArgs(editor, file, line),
-      ]);
-    } else {
-      Bun.spawn([
-        'open',
-        file,
-      ]);
-    }
+    Bun.spawn(resolveEditorCommand(editorId, join(repoRoot, relPath), line));
     return {
       ok: true,
     };

@@ -10,6 +10,7 @@ import type {
   Comment,
   CommitInfo,
   CompareSpec,
+  EditorId,
   FileChange,
   RepoInfo,
   ReviewModel,
@@ -63,6 +64,8 @@ interface ReviewState {
   lineWrap: boolean;
   /** Diff font size in pixels. */
   fontSize: number;
+  /** Where "Open in editor" sends files. */
+  editor: EditorId;
   /** Recently-opened repo roots, newest first (for the project switcher). */
   recentProjects: string[];
   /** Recent commits, newest first (the sidebar history tab). */
@@ -95,6 +98,7 @@ interface ReviewState {
   setIgnoreWhitespace: (value: boolean) => void;
   setLineWrap: (value: boolean) => void;
   setFontSize: (size: number) => void;
+  setEditor: (editor: EditorId) => void;
   setSettings: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
   setCompare: (compare: CompareSpec) => Promise<void>;
@@ -216,6 +220,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       ignoreWhitespace: get().ignoreWhitespace,
       lineWrap: get().lineWrap,
       fontSize: get().fontSize,
+      editor: get().editor,
     });
   };
 
@@ -249,6 +254,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     ignoreWhitespace: CONFIG_DEFAULTS.ignoreWhitespace,
     lineWrap: CONFIG_DEFAULTS.lineWrap,
     fontSize: CONFIG_DEFAULTS.fontSize,
+    editor: CONFIG_DEFAULTS.editor,
     recentProjects: [],
     log: [],
     repoInfo: null,
@@ -414,6 +420,13 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       persistConfig();
     },
 
+    setEditor: (editor) => {
+      set({
+        editor,
+      });
+      persistConfig();
+    },
+
     setSettings: (open) => {
       set({
         settings: open,
@@ -434,6 +447,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           ignoreWhitespace: loaded.ignoreWhitespace,
           lineWrap: loaded.lineWrap,
           fontSize: loaded.fontSize,
+          editor: loaded.editor,
         });
       } catch (error) {
         console.error('Failed to load config', error);

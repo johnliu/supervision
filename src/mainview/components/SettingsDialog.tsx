@@ -5,11 +5,13 @@
 import { AlignJustify, Columns2, X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
 import { useEffect, useState } from 'react';
-import type { SkillStatus } from '../../shared/types';
+import { EDITORS } from '../../shared/config';
+import type { EditorId, SkillStatus } from '../../shared/types';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
 import { Button } from './ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Switch } from './ui/switch';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
@@ -96,6 +98,8 @@ export function SettingsDialog() {
   const setIgnoreWhitespace = useReviewStore((state) => state.setIgnoreWhitespace);
   const lineWrap = useReviewStore((state) => state.lineWrap);
   const setLineWrap = useReviewStore((state) => state.setLineWrap);
+  const editor = useReviewStore((state) => state.editor);
+  const setEditor = useReviewStore((state) => state.setEditor);
 
   return (
     <Dialog.Root
@@ -180,6 +184,33 @@ export function SettingsDialog() {
               description="Diff text size in pixels."
             >
               <FontSizeStepper />
+            </Row>
+
+            <Row
+              title="Editor"
+              description="Where “Open in editor” sends files."
+            >
+              <Select
+                value={editor}
+                onValueChange={(value) => setEditor(value as EditorId)}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-40"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EDITORS.map((entry) => (
+                    <SelectItem
+                      key={entry.id}
+                      value={entry.id}
+                    >
+                      {entry.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Row>
 
             <SkillRow open={settings} />
