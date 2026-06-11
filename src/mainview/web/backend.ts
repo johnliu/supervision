@@ -6,7 +6,7 @@
 
 import { CONFIG_DEFAULTS } from '../../shared/config';
 import { renderMarkdown } from '../../shared/reviewMarkdown';
-import type { Comment, ReviewModel, SupervisionConfig } from '../../shared/types';
+import type { Comment, CommitInfo, ReviewModel, SupervisionConfig } from '../../shared/types';
 import type { PlatformBackend, RepoChangedInfo, SupervisionApi } from '../platform';
 import type { DiffStyle } from '../store';
 import { type FixtureData, fixtureIds, getFixture } from './fixtures';
@@ -35,6 +35,44 @@ export interface FixtureBackendHandle {
 function clone<T>(value: T): T {
   return structuredClone(value);
 }
+
+// A deterministic fake history for the panel: newest first, fixed dates so
+// snapshots and tests are stable.
+const FIXTURE_LOG: CommitInfo[] = [
+  [
+    'Polish the review toolbar',
+    '2026-06-10T16:20:00-07:00',
+  ],
+  [
+    'Add comment threads to the diff',
+    '2026-06-10T11:05:00-07:00',
+  ],
+  [
+    'Wire the working-tree watcher',
+    '2026-06-09T18:42:00-07:00',
+  ],
+  [
+    'Teach the sidebar tree git status',
+    '2026-06-09T09:30:00-07:00',
+  ],
+  [
+    'Render side-by-side diffs',
+    '2026-06-08T15:11:00-07:00',
+  ],
+  [
+    'Bootstrap the electrobun shell',
+    '2026-06-07T10:00:00-07:00',
+  ],
+].map(([subject, authorDate], index) => {
+  const hash = `${(index + 1).toString(16).repeat(8)}`.slice(0, 40).padEnd(40, 'f');
+  return {
+    hash,
+    shortHash: hash.slice(0, 7),
+    subject,
+    authorName: 'Fixture Author',
+    authorDate,
+  };
+});
 
 export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendOptions = {}): FixtureBackendHandle {
   let model = clone(fixture.model);
@@ -104,6 +142,10 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
         ...clone(model),
         compare: params?.compare ?? model.compare,
       };
+    },
+    getLog: async () => {
+      await wait();
+      return clone(FIXTURE_LOG);
     },
     stage: async (params) => {
       await wait();

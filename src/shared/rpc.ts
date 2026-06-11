@@ -9,7 +9,15 @@
 // So `workingTreeChanged` lives under `webview.messages`: Bun pushes it via
 // `rpc.send.workingTreeChanged()` and the webview handles it.
 
-import type { AnnotationSide, Comment, CompareSpec, ReviewModel, SetRepoResult, SupervisionConfig } from './types';
+import type {
+  AnnotationSide,
+  Comment,
+  CommitInfo,
+  CompareSpec,
+  ReviewModel,
+  SetRepoResult,
+  SupervisionConfig,
+} from './types';
 
 export type SupervisionRPC = {
   bun: {
@@ -26,6 +34,11 @@ export type SupervisionRPC = {
           compare: CompareSpec;
         };
         response: ReviewModel;
+      };
+      /** Recent commits, newest first (the history panel's data). */
+      getLog: {
+        params: undefined;
+        response: CommitInfo[];
       };
       stage: {
         params: {

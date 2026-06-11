@@ -10,17 +10,19 @@
 // remounts when files are added/removed/approved, while the section's open
 // state (keyed stably) survives those refreshes.
 //
-// A footer pinned below the scroll area holds the compare selector and the
-// project switcher — the two controls that decide what the list above shows.
+// The sidebar is tabbed: Files (this tree), History (the git panel, which owns
+// working/commit/range selection), and Comments (jump list). A footer pinned
+// below holds the project switcher.
 
 import { themeToTreeStyles } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { ChevronRight } from 'lucide-react';
-import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { ChevronRight, FolderTree, History, MessageSquare } from 'lucide-react';
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { FileChange } from '../../shared/types';
 import { useReviewStore } from '../store';
-import { CompareSelector } from './CompareSelector';
+import { CommentsPanel } from './CommentsPanel';
+import { HistoryPanel } from './HistoryPanel';
 import { ProjectSwitcher } from './ProjectSwitcher';
 
 // Matches @pierre/trees' default density itemHeight (model/density.ts).
@@ -193,46 +195,95 @@ function Section({ title, files, defaultOpen }: { title: string; files: FileChan
   );
 }
 
-export function Sidebar() {
+type SidebarTab = 'files' | 'history' | 'comments';
+
+const TABS: Array<{
+  id: SidebarTab;
+  label: string;
+  icon: ReactNode;
+}> = [
+  {
+    id: 'files',
+    label: 'Files',
+    icon: <FolderTree className="size-3 shrink-0" />,
+  },
+  {
+    id: 'history',
+    label: 'History',
+    icon: <History className="size-3 shrink-0" />,
+  },
+  {
+    id: 'comments',
+    label: 'Comments',
+    icon: <MessageSquare className="size-3 shrink-0" />,
+  },
+];
+
+function FilesPanel() {
   const model = useReviewStore((state) => state.model);
   const working = useReviewStore((state) => state.compare.kind === 'working');
   const empty = model && model.unreviewed.length === 0 && model.reviewed.length === 0;
+
+  if (!model) {
+    return <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>;
+  }
+  return (
+    <>
+      {model.unreviewed.length > 0 ? (
+        <Section
+          key="unreviewed"
+          title={working ? 'Unstaged' : 'Changed'}
+          files={model.unreviewed}
+          defaultOpen
+        />
+      ) : null}
+      {working && model.reviewed.length > 0 ? (
+        <Section
+          key="reviewed"
+          title="Staged"
+          files={model.reviewed}
+          defaultOpen={false}
+        />
+      ) : null}
+      {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}
+    </>
+  );
+}
+
+export function Sidebar() {
+  const [tab, setTab] = useState<SidebarTab>('files');
 
   return (
     <div
       className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground"
       style={TREE_STYLE}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">
-        {model ? (
-          <>
-            {model.unreviewed.length > 0 ? (
-              <Section
-                key="unreviewed"
-                title={working ? 'Unstaged' : 'Changed'}
-                files={model.unreviewed}
-                defaultOpen
-              />
-            ) : null}
-            {working && model.reviewed.length > 0 ? (
-              <Section
-                key="reviewed"
-                title="Staged"
-                files={model.reviewed}
-                defaultOpen={false}
-              />
-            ) : null}
-            {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}
-          </>
-        ) : (
-          <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>
-        )}
+      <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-0.5">
+        {TABS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => setTab(entry.id)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1 rounded-md py-1 text-[0.7rem] font-medium transition-colors',
+              tab === entry.id
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {entry.icon}
+            {entry.label}
+          </button>
+        ))}
       </div>
 
-      {/* What's under review (repo + compare) is scoped by the sidebar's file
-          list, so the pickers live with it, pinned below the scroll area. */}
-      <div className="flex shrink-0 flex-col gap-1.5 border-t border-sidebar-border p-2">
-        <CompareSelector />
+      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+        {tab === 'files' ? <FilesPanel /> : null}
+        {tab === 'history' ? <HistoryPanel /> : null}
+        {tab === 'comments' ? <CommentsPanel /> : null}
+      </div>
+
+      <div className="flex shrink-0 flex-col border-t border-sidebar-border p-2">
         <ProjectSwitcher />
       </div>
     </div>

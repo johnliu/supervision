@@ -80,6 +80,7 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       };
     },
     getReview: async ({ compare }) => git.getReview(currentRepo, compare),
+    getLog: async () => git.getLog(currentRepo),
     stage: async ({ paths }) => {
       // git resolves the repo-relative paths against cwd, so stage/unstage
       // must run at the git root — not a subdir currentRepo (the reason the

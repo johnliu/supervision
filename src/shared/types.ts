@@ -52,6 +52,16 @@ export interface ReviewModel {
   unreviewed: FileChange[];
 }
 
+/** One commit in the history panel (newest-first `git log` order). */
+export interface CommitInfo {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  authorName: string;
+  /** ISO-8601 author date. */
+  authorDate: string;
+}
+
 export interface Comment {
   id: string;
   path: string;

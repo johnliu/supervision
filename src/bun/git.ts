@@ -6,7 +6,7 @@
 // shipped over the RPC bridge.
 
 import { join } from 'node:path';
-import type { CompareSpec, FileChange, FileStatus, ReviewModel } from '../shared/types';
+import type { CommitInfo, CompareSpec, FileChange, FileStatus, ReviewModel } from '../shared/types';
 
 interface GitResult {
   stdout: string;
@@ -403,6 +403,44 @@ export async function getReview(cwd: string, compare: CompareSpec): Promise<Revi
     reviewed: [],
     unreviewed: files,
   };
+}
+
+// History panel depth. Enough scrollback to find a recent base; not the
+// whole history of a large repo.
+const LOG_LIMIT = 100;
+
+/**
+ * Recent commits, newest first. Fields are separated by control characters
+ * (unit/record separators) so subjects with any printable punctuation parse
+ * cleanly. An empty repo (no commits yet) yields [].
+ */
+export async function getLog(cwd: string): Promise<CommitInfo[]> {
+  const repoRoot = await getRepoRoot(cwd);
+  if (!repoRoot) {
+    return [];
+  }
+  const res = await git(repoRoot, [
+    'log',
+    `-${LOG_LIMIT}`,
+    '--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1e',
+  ]);
+  if (res.exitCode !== 0) {
+    return [];
+  }
+  return res.stdout
+    .split('\x1e')
+    .map((record) => record.replace(/^\n/, ''))
+    .filter((record) => record.length > 0)
+    .map((record) => {
+      const [hash, shortHash, subject, authorName, authorDate] = record.split('\x1f');
+      return {
+        hash,
+        shortHash,
+        subject,
+        authorName,
+        authorDate,
+      };
+    });
 }
 
 /** Approve = move changes into the index. */

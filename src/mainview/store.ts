@@ -5,7 +5,15 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { create } from 'zustand';
 import { CONFIG_DEFAULTS, clampFontSize } from '../shared/config';
-import type { AnnotationSide, Comment, CompareSpec, FileChange, ReviewModel, SetRepoResult } from '../shared/types';
+import type {
+  AnnotationSide,
+  Comment,
+  CommitInfo,
+  CompareSpec,
+  FileChange,
+  ReviewModel,
+  SetRepoResult,
+} from '../shared/types';
 import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './platform';
 
 export type DiffStyle = 'split' | 'unified';
@@ -20,6 +28,13 @@ export interface Draft {
   side: AnnotationSide;
   endLine?: number;
   endSide?: AnnotationSide;
+}
+
+/** A one-shot "scroll the diff here" request (jump-to-comment). */
+export interface ScrollTarget {
+  path: string;
+  line: number;
+  side: AnnotationSide;
 }
 
 interface ReviewState {
@@ -49,6 +64,10 @@ interface ReviewState {
   fontSize: number;
   /** Recently-opened repo roots, newest first (for the project switcher). */
   recentProjects: string[];
+  /** Recent commits, newest first (the sidebar history tab). */
+  log: CommitInfo[];
+  /** Pending jump-to-comment scroll request, consumed by the DiffPane. */
+  scrollTarget: ScrollTarget | null;
   refresh: () => Promise<void>;
   /** Load persisted preferences from `.supervision/config.json` on launch. */
   hydrateConfig: () => Promise<void>;
@@ -92,6 +111,9 @@ interface ReviewState {
     markdown: string;
     path: string;
   }>;
+  /** Show a comment in the diff: select its file and scroll to its line. */
+  jumpToComment: (comment: Comment) => void;
+  clearScrollTarget: () => void;
   /** Dispatch a native-menu action id to the matching store action. */
   handleMenuAction: (action: string) => void;
 }
@@ -175,6 +197,8 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       selectedLines: null,
       draft: null,
       comments: [],
+      log: [],
+      scrollTarget: null,
       error: null,
     });
     void get().hydrateConfig();
@@ -222,6 +246,8 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     lineWrap: CONFIG_DEFAULTS.lineWrap,
     fontSize: CONFIG_DEFAULTS.fontSize,
     recentProjects: [],
+    log: [],
+    scrollTarget: null,
 
     refresh: async () => {
       set({
@@ -247,16 +273,28 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           loading: false,
         });
       }
+      // History is auxiliary — a backend without getLog (or an empty repo)
+      // must not fail the review itself.
+      try {
+        set({
+          log: await api.getLog(),
+        });
+      } catch {
+        set({
+          log: [],
+        });
+      }
     },
 
     select: (path) => {
       set({
         selectedPath: path,
-        // A line selection, any open composer, and the staged-side choice all
-        // belong to one file; drop them when switching files.
+        // A line selection, any open composer, the staged-side choice, and a
+        // pending comment jump all belong to one file; drop them on switch.
         diffSide: 'new',
         selectedLines: null,
         draft: null,
+        scrollTarget: null,
       });
     },
 
@@ -484,6 +522,30 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     exportReview: async () => {
       // The Bun side writes the review file and copies it to the system clipboard.
       return api.exportMarkdown();
+    },
+
+    jumpToComment: (comment) => {
+      // Selection/composer state belongs to the previous file; the scroll
+      // target is consumed (and cleared) by the DiffPane once the diff for
+      // `comment.path` has mounted. Targets the range end — where the
+      // annotation renders.
+      set({
+        selectedPath: comment.path,
+        diffSide: 'new',
+        selectedLines: null,
+        draft: null,
+        scrollTarget: {
+          path: comment.path,
+          line: comment.endLine ?? comment.line,
+          side: comment.endSide ?? comment.side,
+        },
+      });
+    },
+
+    clearScrollTarget: () => {
+      set({
+        scrollTarget: null,
+      });
     },
 
     handleMenuAction: (action) => {

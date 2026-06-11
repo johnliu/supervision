@@ -548,6 +548,72 @@ export function DiffPane() {
     fingerprint,
   ]);
 
+  // Jump-to-comment: consume the store's one-shot scroll target once the
+  // diff for that file has mounted. Like the expansion replay above, a scroll
+  // issued before the initial highlight render gets clobbered by the mount
+  // layout (observed: scrollTop snaps back to 0), so wait until the renderer
+  // is highlighted AND the target line resolves a position — with a deadline
+  // so a binary/missing diff can't strand the target forever.
+  const scrollTarget = useReviewStore((state) => state.scrollTarget);
+  const clearScrollTarget = useReviewStore((state) => state.clearScrollTarget);
+  useEffect(() => {
+    if (!scrollTarget || !itemId || scrollTarget.path !== filePath) {
+      return;
+    }
+    let cancelled = false;
+    const started = performance.now();
+    const attempt = () => {
+      if (cancelled) {
+        return;
+      }
+      const view = viewRef.current?.getInstance();
+      const instance = renderedDiffInstance(view);
+      const highlighted =
+        instance != null &&
+        (
+          instance as unknown as {
+            hunksRenderer?: {
+              renderCache?: {
+                highlighted?: boolean;
+              };
+            };
+          }
+        ).hunksRenderer?.renderCache?.highlighted === true;
+      const position = instance?.getLinePosition(scrollTarget.line, scrollTarget.side) ?? null;
+      const elapsed = performance.now() - started;
+      const ready =
+        instance != null && position != null && view?.getTopForItem(itemId) != null && (highlighted || elapsed > 2500);
+      if (!ready && elapsed < 4000) {
+        requestAnimationFrame(attempt);
+        return;
+      }
+      if (ready) {
+        navLog('jump to comment', {
+          line: scrollTarget.line,
+          side: scrollTarget.side,
+        });
+        viewRef.current?.scrollTo({
+          type: 'line',
+          id: itemId,
+          lineNumber: scrollTarget.line,
+          side: scrollTarget.side,
+          align: 'center',
+          behavior: 'instant',
+        });
+      }
+      clearScrollTarget();
+    };
+    attempt();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    scrollTarget,
+    itemId,
+    filePath,
+    clearScrollTarget,
+  ]);
+
   // A bar fully revealed by expansion is no longer a gap stop. Drop the bar
   // cursor when its stop disappears so the next j/k resolves from the line
   // selection (which sits just before the now-revealed lines) and steps
