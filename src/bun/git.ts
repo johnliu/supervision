@@ -6,7 +6,16 @@
 // shipped over the RPC bridge.
 
 import { basename, dirname, join, resolve } from 'node:path';
-import type { CommitInfo, CompareSpec, FileChange, FileStatus, RepoInfo, ReviewModel } from '../shared/types';
+import type {
+  BranchInfo,
+  CommitInfo,
+  CompareSpec,
+  FileChange,
+  FileStatus,
+  RepoInfo,
+  ReviewModel,
+  WorktreeInfo,
+} from '../shared/types';
 
 interface GitResult {
   stdout: string;
@@ -30,27 +39,38 @@ interface NameStatusEntry {
  * blocks on write and hangs. Draining stdout/stderr as streams avoids that.
  */
 export async function git(repo: string, args: string[]): Promise<GitResult> {
-  const proc = Bun.spawn(
-    [
-      'git',
-      ...args,
-    ],
-    {
-      cwd: repo,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  );
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return {
-    stdout,
-    stderr,
-    exitCode,
-  };
+  try {
+    const proc = Bun.spawn(
+      [
+        'git',
+        ...args,
+      ],
+      {
+        cwd: repo,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return {
+      stdout,
+      stderr,
+      exitCode,
+    };
+  } catch (error) {
+    // Bun.spawn THROWS (posix_spawn ENOENT) when `repo` no longer exists —
+    // e.g. a recents entry whose worktree was deleted. Shape it like any
+    // other failed git call so callers' exit-code checks handle it.
+    return {
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+      exitCode: -1,
+    };
+  }
 }
 
 /** Contents of a blob at `rev` ('HEAD', '' for the index, a sha…); '' if absent. */
@@ -131,6 +151,133 @@ export async function getRepoInfo(cwd: string): Promise<RepoInfo> {
     branch,
     worktree: linked ? basename(root) : null,
   };
+}
+
+/**
+ * Parse `git worktree list --porcelain`: blank-line-separated records of
+ * `worktree <path>` / `HEAD <sha>` / `branch refs/heads/<name>` (or
+ * `detached`). The main checkout is always the first record; bare records
+ * have no working tree to review and are skipped.
+ */
+export function parseWorktreeList(out: string, currentRoot: string): WorktreeInfo[] {
+  const worktrees: WorktreeInfo[] = [];
+  let first = true;
+  for (const record of out.split('\n\n')) {
+    const lines = record.split('\n').filter((line) => line.length > 0);
+    if (lines.length === 0) {
+      continue;
+    }
+    const main = first;
+    first = false;
+    let path: string | null = null;
+    let branch: string | null = null;
+    let bare = false;
+    for (const line of lines) {
+      if (line.startsWith('worktree ')) {
+        path = line.slice('worktree '.length);
+      } else if (line.startsWith('branch refs/heads/')) {
+        branch = line.slice('branch refs/heads/'.length);
+      } else if (line === 'bare') {
+        bare = true;
+      }
+    }
+    if (!path || bare) {
+      continue;
+    }
+    worktrees.push({
+      path,
+      branch,
+      current: path === currentRoot,
+      main,
+    });
+  }
+  return worktrees;
+}
+
+/** All checkouts of the project the current root belongs to. */
+export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
+  const root = await getRepoRoot(cwd);
+  if (!root) {
+    return [];
+  }
+  const res = await git(root, [
+    'worktree',
+    'list',
+    '--porcelain',
+  ]);
+  if (res.exitCode !== 0) {
+    return [];
+  }
+  return parseWorktreeList(res.stdout, root);
+}
+
+/**
+ * Local branches, most recently committed first. Branches checked out in
+ * ANOTHER worktree carry that worktree's root (git refuses `switch` for them).
+ */
+export async function listBranches(cwd: string): Promise<BranchInfo[]> {
+  const root = await getRepoRoot(cwd);
+  if (!root) {
+    return [];
+  }
+  const [refs, worktrees] = await Promise.all([
+    git(root, [
+      'for-each-ref',
+      '--sort=-committerdate',
+      '--format=%(refname:short)',
+      'refs/heads',
+    ]),
+    listWorktrees(root),
+  ]);
+  if (refs.exitCode !== 0) {
+    return [];
+  }
+  const current = worktrees.find((worktree) => worktree.current)?.branch ?? null;
+  const elsewhere = new Map(
+    worktrees
+      .filter((worktree) => !worktree.current && worktree.branch)
+      .map((worktree) => [
+        worktree.branch,
+        worktree.path,
+      ]),
+  );
+  return refs.stdout
+    .split('\n')
+    .filter((name) => name.length > 0)
+    .map((name) => ({
+      name,
+      current: name === current,
+      worktree: name === current ? null : (elsewhere.get(name) ?? null),
+    }));
+}
+
+/** Check out `name` in the current worktree, keeping local edits if git can. */
+export async function switchBranch(
+  cwd: string,
+  name: string,
+): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const root = await getRepoRoot(cwd);
+  if (!root) {
+    return {
+      ok: false,
+      error: `Not a git repository: ${cwd}`,
+    };
+  }
+  const res = await git(root, [
+    'switch',
+    name,
+  ]);
+  return res.exitCode === 0
+    ? {
+        ok: true,
+      }
+    : {
+        ok: false,
+        error: res.stderr.trim() || `git switch ${name} failed`,
+      };
 }
 
 function mapStatusLetter(letter: string): FileStatus {

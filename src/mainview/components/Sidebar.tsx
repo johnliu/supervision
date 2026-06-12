@@ -17,14 +17,14 @@
 
 import { themeToTreeStyles } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { ChevronRight, FolderTree, GitBranch, GitCompareArrows, History, MessageSquare } from 'lucide-react';
+import { ChevronRight, FolderTree, History, MessageSquare } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { CommitInfo, CompareSpec, FileChange } from '../../shared/types';
+import type { FileChange } from '../../shared/types';
 import { resolveThemeType, useReviewStore } from '../store';
 import { CommentsPanel } from './CommentsPanel';
 import { HistoryPanel } from './HistoryPanel';
-import { ProjectSwitcher } from './ProjectSwitcher';
+import { RepoIdentity } from './RepoIdentity';
 
 // Matches @pierre/trees' default density itemHeight (model/density.ts).
 const ITEM_HEIGHT = 30;
@@ -210,58 +210,11 @@ function Section({ title, files, defaultOpen }: { title: string; files: FileChan
   );
 }
 
-/** Short label for the compare target ("Working tree", "Commit abc1234", …). */
-function compareLabel(compare: CompareSpec, log: CommitInfo[]): string {
-  const short = (ref: string) => log.find((c) => c.hash === ref || c.shortHash === ref)?.shortHash ?? ref.slice(0, 7);
-  switch (compare.kind) {
-    case 'working':
-      return 'working tree';
-    case 'commit':
-      return `${short(compare.ref)}`;
-    case 'range':
-      return `${short(compare.base)} → ${compare.head === null ? 'working tree' : short(compare.head)}`;
-  }
-}
-
-function FooterLine({ icon, text, title }: { icon: ReactNode; text: string; title?: string }) {
+// The identity rows (project/worktree, branch/compare) live in RepoIdentity.
+function SidebarFooter({ onShowHistory }: { onShowHistory: () => void }) {
   return (
-    <div
-      className="flex items-center gap-1.5 px-1.5 text-[0.65rem] text-muted-foreground"
-      title={title}
-    >
-      {icon}
-      <span className="truncate">{text}</span>
-    </div>
-  );
-}
-
-// The identity stack, broadest scope first: Project > Worktree > Branch, then
-// what the diff is being compared to. The main checkout reads as "main".
-function SidebarFooter() {
-  const repoInfo = useReviewStore((state) => state.repoInfo);
-  const compare = useReviewStore((state) => state.compare);
-  const log = useReviewStore((state) => state.log);
-
-  return (
-    <div className="flex shrink-0 flex-col gap-1 border-t border-sidebar-border p-2">
-      <ProjectSwitcher />
-      {repoInfo ? (
-        <FooterLine
-          icon={<FolderTree className="size-3 shrink-0" />}
-          text={repoInfo.worktree ?? 'main'}
-          title={repoInfo.root}
-        />
-      ) : null}
-      {repoInfo?.branch ? (
-        <FooterLine
-          icon={<GitBranch className="size-3 shrink-0" />}
-          text={repoInfo.branch}
-        />
-      ) : null}
-      <FooterLine
-        icon={<GitCompareArrows className="size-3 shrink-0" />}
-        text={compareLabel(compare, log)}
-      />
+    <div className="shrink-0 border-t border-sidebar-border p-2">
+      <RepoIdentity onShowHistory={onShowHistory} />
     </div>
   );
 }
@@ -358,7 +311,7 @@ export function Sidebar() {
         {tab === 'comments' ? <CommentsPanel /> : null}
       </div>
 
-      <SidebarFooter />
+      <SidebarFooter onShowHistory={() => setTab('history')} />
     </div>
   );
 }

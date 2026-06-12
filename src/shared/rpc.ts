@@ -11,6 +11,7 @@
 
 import type {
   AnnotationSide,
+  BranchInfo,
   Comment,
   CommitInfo,
   CompareSpec,
@@ -19,6 +20,7 @@ import type {
   SetRepoResult,
   SkillStatus,
   SupervisionConfig,
+  WorktreeInfo,
 } from './types';
 
 export type SupervisionRPC = {
@@ -46,6 +48,26 @@ export type SupervisionRPC = {
       getRepoInfo: {
         params: undefined;
         response: RepoInfo;
+      };
+      /** All checkouts of the current project (footer worktree menu). */
+      getWorktrees: {
+        params: undefined;
+        response: WorktreeInfo[];
+      };
+      /** Local branches, newest commit first (footer branch menu). */
+      getBranches: {
+        params: undefined;
+        response: BranchInfo[];
+      };
+      /** `git switch <name>` in the current worktree. */
+      switchBranch: {
+        params: {
+          name: string;
+        };
+        response: {
+          ok: boolean;
+          error?: string;
+        };
       };
       stage: {
         params: {

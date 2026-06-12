@@ -64,6 +64,28 @@ export interface RepoInfo {
   worktree: string | null;
 }
 
+/** One checkout of the project (`git worktree list`). */
+export interface WorktreeInfo {
+  /** Absolute path of the worktree's root. */
+  path: string;
+  /** Checked-out branch, or null when detached. */
+  branch: string | null;
+  /** True for the worktree currently under review. */
+  current: boolean;
+  /** True for the main checkout (always listed first by git). */
+  main: boolean;
+}
+
+/** One local branch (`refs/heads`), newest commit first. */
+export interface BranchInfo {
+  name: string;
+  /** Checked out in the worktree under review. */
+  current: boolean;
+  /** Root of ANOTHER worktree that has this branch checked out (git refuses
+   * to switch to it here), or null when the branch is free to switch to. */
+  worktree: string | null;
+}
+
 export interface ReviewModel {
   repoRoot: string;
   compare: CompareSpec;

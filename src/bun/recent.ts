@@ -26,6 +26,18 @@ export async function readRecentProjects(): Promise<string[]> {
   }
 }
 
+/** Persist `entries` verbatim (callers own ordering and de-duplication). */
+export async function writeRecentProjects(entries: string[]): Promise<void> {
+  try {
+    await mkdir(path.dirname(recentPath()), {
+      recursive: true,
+    });
+    await Bun.write(recentPath(), `${JSON.stringify(entries, null, 2)}\n`);
+  } catch (error) {
+    console.error('Failed to write recent projects', error);
+  }
+}
+
 /** Move `repoPath` to the front and persist; returns the updated list. */
 export async function addRecentProject(repoPath: string): Promise<string[]> {
   const existing = await readRecentProjects();
@@ -33,13 +45,6 @@ export async function addRecentProject(repoPath: string): Promise<string[]> {
     repoPath,
     ...existing.filter((entry) => entry !== repoPath),
   ].slice(0, MAX_RECENT);
-  try {
-    await mkdir(path.dirname(recentPath()), {
-      recursive: true,
-    });
-    await Bun.write(recentPath(), `${JSON.stringify(next, null, 2)}\n`);
-  } catch (error) {
-    console.error('Failed to write recent projects', error);
-  }
+  await writeRecentProjects(next);
   return next;
 }

@@ -5,16 +5,14 @@ pieces it touches so it can be picked up cleanly.
 
 ## Up next
 
-- **Worktree & branch support.** The footer now *names* the worktree and
-  branch (`getRepoInfo`); the next step is switching, not just showing. Shape:
-  `git worktree list --porcelain` + `git branch --list` behind one RPC; the
-  project switcher grows a "Worktrees" section (jump between checkouts of the
-  same project — each is just a `setRepo` to that root) and the history tab a
-  branch picker that feeds `compare: range` (review `main..feature` without
-  checking out). Pairs naturally with the agent flow where each task runs in
-  its own worktree.
+(Nothing queued — pick from the follow-ups below.)
 
 ## Possible follow-ups
+
+- **Compare against a branch without checking out.** The footer's branch menu
+  now *switches* (`git switch`); a complementary picker in the history tab
+  could feed `compare: range` instead (review `main..feature` from any
+  checkout, no switch needed — the `range` plumbing already exists).
 
 - **Comment re-anchoring.** Comments now record an anchor (HEAD + blob sha)
   and read back as *stale* when the file drifts; the next step is moving the

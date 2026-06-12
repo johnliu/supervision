@@ -94,6 +94,8 @@ interface ReviewState {
   switchRepo: (path: string) => Promise<void>;
   /** Open the native folder picker, then switch to the chosen repo. */
   openProject: () => Promise<void>;
+  /** `git switch` to a local branch in the current worktree (footer menu). */
+  switchBranch: (name: string) => Promise<void>;
   select: (path: string) => void;
   setDiffSide: (side: DiffSide) => void;
   /** Select the next/previous file in the sidebar order (wraps around). */
@@ -547,6 +549,21 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       } catch {
         // The native dialog outlived the RPC timeout; the push drives the update.
       }
+    },
+
+    switchBranch: async (name) => {
+      // The checkout rewrites working-tree files, so the watcher refreshes
+      // too; the explicit refresh just gets the footer branch there sooner.
+      const result = await api.switchBranch({
+        name,
+      });
+      if (!result.ok) {
+        set({
+          error: result.error ?? `Failed to switch to ${name}`,
+        });
+        return;
+      }
+      await get().refresh();
     },
 
     setCompare: async (compare) => {

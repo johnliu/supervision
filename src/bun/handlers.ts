@@ -47,9 +47,10 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
   /** Resolve the git root (comments live there), falling back to currentRepo. */
   const repoRoot = async (): Promise<string> => (await git.getRepoRoot(currentRepo)) ?? currentRepo;
 
-  // Point the app at `target`'s git root: update currentRepo, record it as a
-  // recent project, and notify the host (watcher restart + push). Errors
-  // (not a repo) come back as data so the UI can surface them.
+  // Point the app at `target`'s git root: update currentRepo, record its
+  // PROJECT (the main checkout — recents are per-project, never per-worktree)
+  // and notify the host (watcher restart + push). Errors (not a repo) come
+  // back as data so the UI can surface them.
   const switchRepo = async (target: string): Promise<SetRepoResult> => {
     const root = await git.getRepoRoot(target);
     if (!root) {
@@ -59,7 +60,7 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       };
     }
     currentRepo = root;
-    const recents = await recent.addRecentProject(root);
+    const recents = await recent.addRecentProject((await git.getRepoInfo(root)).projectRoot);
     options.onRepoChanged?.({
       root,
       recents,
@@ -140,7 +141,30 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       }
       return switchRepo(chosen);
     },
-    getRecentProjects: async () => recent.readRecentProjects(),
+    // Recents list project ROOTS only. Entries written before that rule (or
+    // whose checkout moved/vanished) are normalized through git on read:
+    // worktree paths collapse into their project, dead paths drop out.
+    getRecentProjects: async () => {
+      const entries = await recent.readRecentProjects();
+      const projects: string[] = [];
+      for (const entry of entries) {
+        const root = await git.getRepoRoot(entry);
+        if (!root) {
+          continue;
+        }
+        const { projectRoot } = await git.getRepoInfo(root);
+        if (!projects.includes(projectRoot)) {
+          projects.push(projectRoot);
+        }
+      }
+      if (projects.length !== entries.length || projects.some((entry, i) => entry !== entries[i])) {
+        await recent.writeRecentProjects(projects);
+      }
+      return projects;
+    },
+    getWorktrees: async () => git.listWorktrees(currentRepo),
+    getBranches: async () => git.listBranches(currentRepo),
+    switchBranch: async ({ name }) => git.switchBranch(currentRepo, name),
     getSkillStatus: async () => skill.getSkillStatus(),
     installSkill: async () => skill.installSkill(),
     openInEditor: async ({ path: relPath, line }) => {

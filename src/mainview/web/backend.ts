@@ -78,6 +78,17 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
   let model = clone(fixture.model);
   let comments = clone(fixture.comments);
   let skillInstalled = false;
+  // Branch the fixture "checkout" is on; switchBranch flips it so the footer
+  // menu is exercisable in web mode.
+  let currentBranch = 'main';
+  // A plausible branch list: 'feature/threads' is held by the fake worktree
+  // below, so the disabled-in-another-worktree state renders too.
+  const FIXTURE_BRANCHES = [
+    'main',
+    'feature/threads',
+    'fix/stale-anchors',
+    'chore/deps',
+  ];
   const config: SupervisionConfig = {
     ...CONFIG_DEFAULTS,
     ...fixture.config,
@@ -153,8 +164,49 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       return {
         root: model.repoRoot,
         projectRoot: model.repoRoot,
-        branch: 'main',
+        branch: currentBranch,
         worktree: null,
+      };
+    },
+    // The fake linked worktree points at another fixture, so selecting it in
+    // the footer menu performs a real (fixture) repo switch.
+    getWorktrees: async () => {
+      await wait();
+      return [
+        {
+          path: model.repoRoot,
+          branch: currentBranch,
+          current: true,
+          main: true,
+        },
+        {
+          path: 'fixture://gaps-small',
+          branch: 'feature/threads',
+          current: false,
+          main: false,
+        },
+      ];
+    },
+    getBranches: async () => {
+      await wait();
+      return FIXTURE_BRANCHES.map((name) => ({
+        name,
+        current: name === currentBranch,
+        worktree: name !== currentBranch && name === 'feature/threads' ? 'fixture://gaps-small' : null,
+      }));
+    },
+    switchBranch: async (params) => {
+      await wait();
+      const name = params?.name ?? '';
+      if (!FIXTURE_BRANCHES.includes(name)) {
+        return {
+          ok: false,
+          error: `fatal: invalid reference: ${name}`,
+        };
+      }
+      currentBranch = name;
+      return {
+        ok: true,
       };
     },
     stage: async (params) => {
@@ -283,6 +335,7 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
       const next = getFixture(id);
       model = clone(next.model);
       comments = clone(next.comments);
+      currentBranch = 'main';
       const info: RepoChangedInfo = {
         root: model.repoRoot,
         recents: recents(),

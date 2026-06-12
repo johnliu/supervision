@@ -19,11 +19,14 @@ export function ProjectSwitcher() {
   const openProject = useReviewStore((state) => state.openProject);
 
   const current = model?.repoRoot ?? '';
-  // The trigger names the PROJECT (the main checkout); when reviewing a linked
-  // worktree the footer's branch line carries the worktree name.
-  const projectLabel = repoInfo ? basename(repoInfo.projectRoot) : current ? basename(current) : 'No project';
-  // Recents minus the current repo — it already shows in the trigger + header.
-  const others = recentProjects.filter((repoPath) => repoPath !== current);
+  // Everything here is PROJECT-level (the main checkout): recents store
+  // project roots only, and the current entry shows the project even when a
+  // linked worktree is under review — the footer's identity row carries the
+  // worktree name.
+  const projectRoot = repoInfo?.projectRoot ?? current;
+  const projectLabel = projectRoot ? basename(projectRoot) : 'No project';
+  // Recents minus the current project — it already shows in the trigger + header.
+  const others = recentProjects.filter((repoPath) => repoPath !== projectRoot);
 
   return (
     <DropdownMenu.Root>
@@ -31,10 +34,10 @@ export function ProjectSwitcher() {
         <button
           type="button"
           title={current}
-          className="flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none"
+          className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none"
         >
           <span className="truncate">{projectLabel}</span>
-          <ChevronsUpDown className="ml-auto size-3 shrink-0 opacity-60" />
+          <ChevronsUpDown className="size-3 shrink-0 opacity-60" />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -43,7 +46,7 @@ export function ProjectSwitcher() {
           sideOffset={6}
           className="z-50 max-w-[24rem] min-w-[16rem] overflow-hidden rounded-lg bg-popover/95 p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
         >
-          {current ? (
+          {projectRoot ? (
             <>
               <DropdownMenu.Label className="px-2 py-1 text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
                 Current
@@ -54,8 +57,8 @@ export function ProjectSwitcher() {
               >
                 <Check className="size-3.5 shrink-0 text-primary" />
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate font-medium">{basename(current)}</span>
-                  <span className="truncate text-[0.65rem] text-muted-foreground">{current}</span>
+                  <span className="truncate font-medium">{projectLabel}</span>
+                  <span className="truncate text-[0.65rem] text-muted-foreground">{projectRoot}</span>
                 </span>
               </DropdownMenu.Item>
             </>
