@@ -159,7 +159,7 @@ export type DiffThemeId =
   | 'gruvbox'
   | 'everforest';
 
-/** User preferences persisted to `.supervision/config.json`. */
+/** User preferences persisted app-wide to `~/.supervision/config.json`. */
 export interface SupervisionConfig {
   diffStyle: 'split' | 'unified';
   ignoreWhitespace: boolean;

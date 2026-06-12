@@ -86,7 +86,7 @@ interface ReviewState {
   /** Pending jump-to-comment scroll request, consumed by the DiffPane. */
   scrollTarget: ScrollTarget | null;
   refresh: () => Promise<void>;
-  /** Load persisted preferences from `.supervision/config.json` on launch. */
+  /** Load persisted preferences from `~/.supervision/config.json` on launch. */
   hydrateConfig: () => Promise<void>;
   /** Load the recent-projects list (app-level) on launch. */
   loadRecentProjects: () => Promise<void>;
@@ -240,7 +240,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     void get().refresh();
   });
 
-  // Persist the current view preferences to .supervision/config.json.
+  // Persist the current view preferences to ~/.supervision/config.json.
   const persistConfig = () => {
     void api.saveConfig({
       diffStyle: get().diffStyle,

@@ -119,8 +119,10 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       }
       return result;
     },
+    // Config is user-level; the repo root is only passed so a legacy
+    // per-repo config can seed the user file on first read.
     getConfig: async () => config.readConfig(await repoRoot()),
-    saveConfig: async (input) => config.writeConfig(await repoRoot(), input),
+    saveConfig: async (input) => config.writeConfig(input),
     setRepo: async ({ path: target }) => switchRepo(target),
     openProject: async () => {
       if (!options.native?.openFolderDialog) {

@@ -1,5 +1,5 @@
 // Settings panel (radix Dialog). Hosts the view preferences that are persisted
-// to .supervision/config.json; opened from Supervision ▸ Settings… (Cmd+,).
+// to ~/.supervision/config.json; opened from Supervision ▸ Settings… (Cmd+,).
 // The controls share store state with the toolbar, so the two stay in sync.
 
 import { AlignJustify, Columns2, Moon, Sun, SunMoon, X } from 'lucide-react';
@@ -120,7 +120,7 @@ export function SettingsDialog() {
             <div>
               <Dialog.Title className="text-sm font-semibold">Settings</Dialog.Title>
               <Dialog.Description className="mt-0.5 text-xs text-muted-foreground">
-                Saved to .supervision/config.json
+                Saved to ~/.supervision/config.json
               </Dialog.Description>
             </div>
             <Dialog.Close className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
