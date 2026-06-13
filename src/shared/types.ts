@@ -105,6 +105,35 @@ export interface CommitInfo {
   authorDate: string;
 }
 
+/** Full details of one commit (the commit-details view). */
+export interface CommitDetails {
+  hash: string;
+  shortHash: string;
+  /** First line of the commit message. */
+  subject: string;
+  /** Message body after the subject line; '' when the message is one line. */
+  body: string;
+  authorName: string;
+  authorEmail: string;
+  /** ISO-8601 author date. */
+  authorDate: string;
+}
+
+/**
+ * Raw bytes of a repo file, base64-encoded for inline preview (images). The
+ * mime type is derived from the file extension on the Bun side.
+ */
+export type FilePayload =
+  | {
+      ok: true;
+      mime: string;
+      base64: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 /**
  * The repo state a comment's line numbers were recorded against. Captured at
  * creation; the feedback skill refreshes it when it moves the commented code.
@@ -197,6 +226,9 @@ export interface SupervisionConfig {
   palette: PaletteId;
   /** Shiki theme pair the diff highlights with (dark/light per `theme`). */
   diffTheme: DiffThemeId;
+  /** First-launch onboarding finished (or skipped). A config file written
+   * before this flag existed counts as onboarded — see bun/config.ts. */
+  onboarded: boolean;
 }
 
 /**

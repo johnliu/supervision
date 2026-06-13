@@ -5,7 +5,7 @@
 // installs its own backend and never touches Electrobun code.
 
 import { type PlatformBackend, type SupervisionApi, setPlatform } from '../platform';
-import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from '../rpc';
+import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged, sendMenuState } from '../rpc';
 
 export function initElectrobunPlatform(): void {
   // Electrobun's request proxy has the same call shape as SupervisionApi (the
@@ -16,6 +16,7 @@ export function initElectrobunPlatform(): void {
     onWorkingTreeChanged,
     onMenuAction,
     onRepoChanged,
+    sendMenuState,
   };
   setPlatform(backend);
 }

@@ -1,6 +1,6 @@
 import { BrowserWindow, Updater } from 'electrobun/bun';
 import { getRepoRoot } from './git';
-import { setupApplicationMenu } from './menu';
+import { type ApplicationMenuHandle, setupApplicationMenu } from './menu';
 import { addRecentProject } from './recent';
 import { createSupervisionRPC, getCurrentRepo } from './rpc';
 import { type WatchHandle, watchWorkingTree } from './watcher';
@@ -48,7 +48,11 @@ function rewatch(root: string | null): void {
 
 // Create the main application window with the typed Supervision RPC attached.
 const url = await getMainViewUrl();
+// Assigned by setupApplicationMenu below; the webview can't push menu state
+// before its first render, so the callback never fires while this is null.
+let menu: ApplicationMenuHandle | null = null;
 const rpc = createSupervisionRPC({
+  onMenuStateChanged: ({ exportEnabled }) => menu?.setExportEnabled(exportEnabled),
   onRepoChanged: ({ root, recents }) => {
     rewatch(root);
     // Push instead of relying on the RPC return — the native folder dialog can
@@ -89,7 +93,7 @@ export { mainWindow, rpc };
 
 // Native menu bar; menu clicks are routed to the webview over `rpc` (except
 // dev tools, which toggles the window's webview inspector directly).
-setupApplicationMenu(rpc, {
+menu = setupApplicationMenu(rpc, {
   onToggleDevTools: () => mainWindow.webview?.toggleDevTools(),
 });
 

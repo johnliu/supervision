@@ -13,7 +13,14 @@ export interface ApplicationMenuOptions {
   onToggleDevTools?: () => void;
 }
 
-export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: ApplicationMenuOptions = {}): void {
+export interface ApplicationMenuHandle {
+  /** Enable/disable "Copy Comments for LLM" — mirrors the toolbar button,
+   * which is disabled while there are no open comments. Rebuilds the menu
+   * (Electrobun has no per-item update API). */
+  setExportEnabled(enabled: boolean): void;
+}
+
+function buildMenu(state: { exportEnabled: boolean }): void {
   ApplicationMenu.setApplicationMenu([
     {
       label: 'Supervision',
@@ -65,9 +72,12 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: Appli
           accelerator: 'CommandOrControl+R',
         },
         {
-          label: 'Export for LLM',
+          // Mirrors the toolbar's copy-comments button (label and enabled
+          // state); the store routes the action to the same exportReview.
+          label: 'Copy Comments for LLM',
           action: 'export',
           accelerator: 'CommandOrControl+Shift+E',
+          enabled: state.exportEnabled,
         },
       ],
     },
@@ -166,6 +176,17 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: Appli
       ],
     },
   ]);
+}
+
+export function setupApplicationMenu(
+  rpc: SupervisionRpcInstance,
+  options: ApplicationMenuOptions = {},
+): ApplicationMenuHandle {
+  // Nothing to copy until the webview reports open comments.
+  const state = {
+    exportEnabled: false,
+  };
+  buildMenu(state);
 
   ApplicationMenu.on('application-menu-clicked', (event: unknown) => {
     const action = (
@@ -188,4 +209,13 @@ export function setupApplicationMenu(rpc: SupervisionRpcInstance, options: Appli
       action,
     });
   });
+
+  return {
+    setExportEnabled: (enabled) => {
+      if (enabled !== state.exportEnabled) {
+        state.exportEnabled = enabled;
+        buildMenu(state);
+      }
+    },
+  };
 }

@@ -39,6 +39,8 @@ export interface PlatformBackend {
   onWorkingTreeChanged(cb: () => void): void;
   onMenuAction(cb: (action: string) => void): void;
   onRepoChanged(cb: (info: RepoChangedInfo) => void): void;
+  /** Mirror UI state into the native menu (no-op on backends without one). */
+  sendMenuState?(state: { exportEnabled: boolean }): void;
 }
 
 let backend: PlatformBackend | null = null;
@@ -75,6 +77,12 @@ export function onMenuAction(cb: (action: string) => void): void {
 
 export function onRepoChanged(cb: (info: RepoChangedInfo) => void): void {
   withBackend((b) => b.onRepoChanged(cb));
+}
+
+/** Mirror UI state into the native menu. Dropped (not buffered) when no
+ * backend is installed yet — the store re-pushes on every comments change. */
+export function sendMenuState(state: { exportEnabled: boolean }): void {
+  backend?.sendMenuState?.(state);
 }
 
 /** Request proxy resolving the active backend at call time. Calling before

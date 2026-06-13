@@ -13,8 +13,10 @@ import type {
   AnnotationSide,
   BranchInfo,
   Comment,
+  CommitDetails,
   CommitInfo,
   CompareSpec,
+  FilePayload,
   RepoInfo,
   ReviewModel,
   SetRepoResult,
@@ -43,6 +45,31 @@ export type SupervisionRPC = {
       getLog: {
         params: undefined;
         response: CommitInfo[];
+      };
+      /** Full message + author identity of one commit (the details view). */
+      getCommit: {
+        params: {
+          ref: string;
+        };
+        response: CommitDetails | null;
+      };
+      /** Commits in `base..head`, newest first (the range-compare overview).
+       * `head: null` means the working tree — commits are `base..HEAD`. */
+      getRangeLog: {
+        params: {
+          base: string;
+          head: string | null;
+        };
+        response: CommitInfo[];
+      };
+      /** Raw file bytes for inline preview (images). `ref` reads the blob at
+       * that commit; omitted = the working tree. */
+      readFile: {
+        params: {
+          path: string;
+          ref?: string;
+        };
+        response: FilePayload;
       };
       /** Project / worktree / branch identity for the sidebar footer. */
       getRepoInfo: {
@@ -177,7 +204,14 @@ export type SupervisionRPC = {
         response: SkillStatus;
       };
     };
-    messages: Record<never, never>;
+    messages: {
+      /** UI state the native menu mirrors (e.g. whether "Copy Comments for
+       * LLM" has anything to copy). Pushed by the webview whenever it changes;
+       * Bun rebuilds the application menu with the matching enabled flags. */
+      menuStateChanged: {
+        exportEnabled: boolean;
+      };
+    };
   };
   webview: {
     requests: Record<never, never>;

@@ -12,6 +12,7 @@ export const CONFIG_DEFAULTS: SupervisionConfig = {
   theme: 'dark',
   palette: 'olive',
   diffTheme: 'pierre',
+  onboarded: false,
 };
 
 /** Base-color families the settings dialog offers. `swatch` is the picker

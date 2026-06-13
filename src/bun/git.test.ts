@@ -5,7 +5,16 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { git, listBranches, listWorktrees, parseWorktreeList, switchBranch } from './git';
+import {
+  getCommitDetails,
+  getRangeLog,
+  git,
+  listBranches,
+  listWorktrees,
+  parseWorktreeList,
+  readFileBase64,
+  switchBranch,
+} from './git';
 
 describe('parseWorktreeList', () => {
   const OUT = [
@@ -169,5 +178,88 @@ describe('worktrees & branches (integration)', () => {
     expect(held.ok).toBe(false);
     expect(held.error).toContain('feature');
     await switchBranch(repo, 'main');
+  });
+
+  test('CMT-1: getCommitDetails returns subject, multi-line body, and author identity', async () => {
+    await Bun.write(path.join(repo, 'b.txt'), 'b\n');
+    await git(repo, [
+      'add',
+      '.',
+    ]);
+    await git(repo, [
+      'commit',
+      '-m',
+      'Add b | with "punctuation"',
+      '-m',
+      'First body line.\n\nSecond paragraph.',
+    ]);
+    const details = await getCommitDetails(repo, 'HEAD');
+    expect(details?.subject).toBe('Add b | with "punctuation"');
+    expect(details?.body).toBe('First body line.\n\nSecond paragraph.');
+    expect(details?.authorName).toBe('Test');
+    expect(details?.authorEmail).toBe('test@example.com');
+    expect(details?.hash).toHaveLength(40);
+    expect(details?.hash.startsWith(details?.shortHash ?? '')).toBe(true);
+    expect(Number.isNaN(new Date(details?.authorDate ?? '').getTime())).toBe(false);
+  });
+
+  test('CMT-2: getCommitDetails is null for an unknown ref', async () => {
+    expect(await getCommitDetails(repo, 'no-such-ref')).toBeNull();
+  });
+
+  test('RNG-1: getRangeLog returns base..head newest first; null head means HEAD', async () => {
+    // History here: init → "Add b | with punctuation" (CMT-1). Range from the
+    // root commit to HEAD must contain exactly the second commit.
+    const log = await getRangeLog(repo, 'main~1', null);
+    expect(log.map((commit) => commit.subject)).toEqual([
+      'Add b | with "punctuation"',
+    ]);
+    // Empty range and bad refs read as no commits, not errors.
+    expect(await getRangeLog(repo, 'HEAD', 'HEAD')).toEqual([]);
+    expect(await getRangeLog(repo, 'no-such-ref', null)).toEqual([]);
+  });
+
+  // A 1x1 transparent PNG — small but a real binary (NUL bytes, high bit set).
+  const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+  test('RDF-1: readFileBase64 round-trips working-tree image bytes', async () => {
+    await Bun.write(path.join(repo, 'pixel.png'), Uint8Array.from(Buffer.from(PNG_BASE64, 'base64')));
+    const payload = await readFileBase64(repo, 'pixel.png');
+    expect(payload).toEqual({
+      ok: true,
+      mime: 'image/png',
+      base64: PNG_BASE64,
+    });
+  });
+
+  test('RDF-2: readFileBase64 reads blob bytes at a ref', async () => {
+    await git(repo, [
+      'add',
+      'pixel.png',
+    ]);
+    await git(repo, [
+      'commit',
+      '-m',
+      'Add pixel',
+    ]);
+    // Overwrite the working copy so a ref read that leaked through to the
+    // working tree would be caught.
+    await Bun.write(path.join(repo, 'pixel.png'), 'not a png');
+    const payload = await readFileBase64(repo, 'pixel.png', 'HEAD');
+    expect(payload).toEqual({
+      ok: true,
+      mime: 'image/png',
+      base64: PNG_BASE64,
+    });
+    await git(repo, [
+      'checkout',
+      '--',
+      'pixel.png',
+    ]);
+  });
+
+  test('RDF-3: readFileBase64 refuses non-image types and escaping paths', async () => {
+    expect((await readFileBase64(repo, 'a.txt')).ok).toBe(false);
+    expect((await readFileBase64(repo, '../outside.png')).ok).toBe(false);
   });
 });

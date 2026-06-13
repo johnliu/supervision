@@ -36,6 +36,10 @@ function parseConfig(data: Partial<SupervisionConfig>): SupervisionConfig {
     theme: clampTheme(data.theme),
     palette: clampPalette(data.palette),
     diffTheme: clampDiffTheme(data.diffTheme),
+    // A config written before the flag existed means the user predates
+    // onboarding — don't greet them with it. Only a missing config file
+    // (CONFIG_DEFAULTS in readConfig) starts the flow.
+    onboarded: data.onboarded !== false,
   };
 }
 

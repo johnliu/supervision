@@ -1,12 +1,16 @@
 import { useEffect } from 'react';
+import { CommitDetailsPane, RangeDetailsPane } from './components/CommitDetailsPane';
 import { DiffPane } from './components/DiffPane';
+import { OnboardingDialog } from './components/OnboardingDialog';
 import { QuickOpen } from './components/QuickOpen';
+import { RepoErrorDialog } from './components/RepoErrorDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { DRAG_REGION, NO_DRAG_REGION } from './lib/dragRegion';
 import { resolveThemeType, useReviewStore } from './store';
 
 export default function App() {
@@ -15,6 +19,11 @@ export default function App() {
   const loadRecentProjects = useReviewStore((state) => state.loadRecentProjects);
   const error = useReviewStore((state) => state.error);
   const theme = useReviewStore((state) => state.theme);
+  // Ref comparison with no file picked: show its details overview ('commit'
+  // → the commit page, 'range' → the compare view); null means the diff.
+  const overview = useReviewStore((state) =>
+    state.selectedPath === null && state.compare.kind !== 'working' ? state.compare.kind : null,
+  );
   const palette = useReviewStore((state) => state.palette);
   const systemDark = useReviewStore((state) => state.systemDark);
   const setSystemDark = useReviewStore((state) => state.setSystemDark);
@@ -84,21 +93,32 @@ export default function App() {
   // rounded card — the Messages/Claude layout.
   return (
     <TooltipProvider>
-      <div className="relative flex h-screen w-screen overflow-hidden bg-sidebar text-foreground">
+      {/* The window shell is one big drag region; the sidebar controls, the
+          content card, and the toolbar punch no-drag holes (see dragRegion.ts),
+          leaving the inset frame and the sidebar's top band to move the window. */}
+      <div className={`relative flex h-screen w-screen overflow-hidden bg-sidebar text-foreground ${DRAG_REGION}`}>
         <Sidebar />
         <div className="min-w-0 flex-1 p-2 pl-0">
           {/* Concentric with the window: innerRadius = outerRadius − gap.
               This window class measures 16pt on Tahoe (NSThemeFrame probe)
               and the gutter is 8px, so the card gets 8px. Revisit if the
               gutter changes or electrobun ships an SDK-26 build (26pt). */}
-          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-border bg-background shadow-sm">
+          <div
+            className={`flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-border bg-background shadow-sm ${NO_DRAG_REGION}`}
+          >
             {error ? (
               <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
                 {error}
               </div>
             ) : null}
             <div className="min-h-0 flex-1">
-              <DiffPane />
+              {overview === 'commit' ? (
+                <CommitDetailsPane />
+              ) : overview === 'range' ? (
+                <RangeDetailsPane />
+              ) : (
+                <DiffPane />
+              )}
             </div>
           </div>
         </div>
@@ -107,6 +127,8 @@ export default function App() {
       <QuickOpen />
       <SettingsDialog />
       <ShortcutsDialog />
+      <OnboardingDialog />
+      <RepoErrorDialog />
     </TooltipProvider>
   );
 }

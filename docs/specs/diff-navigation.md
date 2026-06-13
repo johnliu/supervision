@@ -115,6 +115,7 @@ Where a keypress decides "where am I?" before stepping.
 | SCR-5 | After the user scrolls the cursor out of view, the next j/k steps from the cursor and brings the destination row back into view (CUR-5) — manual scrolling never relocates the cursor. | *(Amended in review: was resume-from-viewport.)* | e2e (scrolling.e2e.ts) |
 | SCR-6 | Every file opens scrolled to the top. | Per-file view remount. | e2e (scrolling.e2e.ts) |
 | SCR-7 | Keyboard navigation never changes horizontal scroll. | Long-line fixture; scroll right, j/k, offset preserved. | e2e (scrolling.e2e.ts) |
+| SCR-8 | The end of the diff is reachable at every font size: at maximum scroll the rendered content ends inside the viewport. | CodeView's layout model `itemMetrics.lineHeight` must match `--diffs-line-height`; with the model's 20px default, any other font size leaves the tail of a long file below the reachable scroll range. | e2e (scrolling.e2e.ts) |
 
 ## FILE — file and view-mode state
 

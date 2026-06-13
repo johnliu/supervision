@@ -158,3 +158,35 @@ test('SCR-7: keyboard navigation never changes horizontal scroll', async ({ page
     });
   expect(after).toBe(scrolledTo);
 });
+
+test('SCR-8: the end of the diff is reachable at a non-default font size', async ({ page }) => {
+  await openFixture(page, {
+    fixture: 'gaps-large',
+  });
+  // 14px is the regression case: rows render at --diffs-line-height 21 while
+  // CodeView's default layout model assumes 20, leaving the tail of a long
+  // file below the reachable scroll range unless itemMetrics matches.
+  await page.evaluate(() => window.__test?.store.getState().setFontSize(14));
+  await settle(page);
+  await settle(page);
+
+  const result = await page.evaluate(async () => {
+    const scroller = document.querySelector('[data-testid="diff-scroller"]') as HTMLElement;
+    for (let i = 0; i < 3; i++) {
+      scroller.scrollTop = scroller.scrollHeight;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    const host = Array.from(scroller.querySelectorAll('*')).find((el) => el.shadowRoot) as HTMLElement;
+    return {
+      scrollable: scroller.scrollHeight > scroller.clientHeight,
+      atMax: Math.abs(scroller.scrollTop - (scroller.scrollHeight - scroller.clientHeight)) <= 1,
+      hostBottom: host.getBoundingClientRect().bottom,
+      viewportBottom: scroller.getBoundingClientRect().top + scroller.clientHeight,
+    };
+  });
+  expect(result.scrollable).toBe(true);
+  expect(result.atMax).toBe(true);
+  // The rendered content must end inside the viewport at max scroll; a
+  // model/render line-height mismatch pushes it past the bottom edge.
+  expect(result.hostBottom).toBeLessThanOrEqual(result.viewportBottom + 1);
+});

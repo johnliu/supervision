@@ -5,12 +5,15 @@
 // have their contents omitted, so a large binary never gets read into memory or
 // shipped over the RPC bridge.
 
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { imageMime } from '../shared/preview';
 import type {
   BranchInfo,
+  CommitDetails,
   CommitInfo,
   CompareSpec,
   FileChange,
+  FilePayload,
   FileStatus,
   RepoInfo,
   ReviewModel,
@@ -683,19 +686,17 @@ export async function getReview(cwd: string, compare: CompareSpec): Promise<Revi
 const LOG_LIMIT = 100;
 
 /**
- * Recent commits, newest first. Fields are separated by control characters
- * (unit/record separators) so subjects with any printable punctuation parse
- * cleanly. An empty repo (no commits yet) yields [].
+ * Run `git log` with the given revision args and parse the records. Fields
+ * are separated by control characters (unit/record separators) so subjects
+ * with any printable punctuation parse cleanly. Failures (empty repo, bad
+ * revision) yield [].
  */
-export async function getLog(cwd: string): Promise<CommitInfo[]> {
-  const repoRoot = await getRepoRoot(cwd);
-  if (!repoRoot) {
-    return [];
-  }
+async function logCommits(repoRoot: string, revisionArgs: string[]): Promise<CommitInfo[]> {
   const res = await git(repoRoot, [
     'log',
     `-${LOG_LIMIT}`,
     '--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1e',
+    ...revisionArgs,
   ]);
   if (res.exitCode !== 0) {
     return [];
@@ -714,6 +715,144 @@ export async function getLog(cwd: string): Promise<CommitInfo[]> {
         authorDate,
       };
     });
+}
+
+/** Recent commits, newest first. An empty repo (no commits yet) yields []. */
+export async function getLog(cwd: string): Promise<CommitInfo[]> {
+  const repoRoot = await getRepoRoot(cwd);
+  if (!repoRoot) {
+    return [];
+  }
+  return logCommits(repoRoot, []);
+}
+
+/** Commits in `base..head`, newest first (the range-compare overview). A
+ * null head means the working tree, whose commit endpoint is HEAD. */
+export async function getRangeLog(cwd: string, base: string, head: string | null): Promise<CommitInfo[]> {
+  const repoRoot = await getRepoRoot(cwd);
+  if (!repoRoot) {
+    return [];
+  }
+  return logCommits(repoRoot, [
+    `${base}..${head ?? 'HEAD'}`,
+  ]);
+}
+
+/**
+ * Full message + author identity of one commit. Fields are unit-separated
+ * with the free-form body LAST, so a body containing the separator (or any
+ * punctuation) can be re-joined instead of corrupting earlier fields.
+ */
+export async function getCommitDetails(cwd: string, ref: string): Promise<CommitDetails | null> {
+  const repoRoot = await getRepoRoot(cwd);
+  if (!repoRoot) {
+    return null;
+  }
+  const res = await git(repoRoot, [
+    'show',
+    '-s',
+    '--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b',
+    ref,
+  ]);
+  if (res.exitCode !== 0) {
+    return null;
+  }
+  const [hash, shortHash, authorName, authorEmail, authorDate, subject, ...bodyParts] = res.stdout.split('\x1f');
+  if (!hash || subject === undefined) {
+    return null;
+  }
+  return {
+    hash: hash.trim(),
+    shortHash,
+    subject,
+    body: bodyParts.join('\x1f').trimEnd(),
+    authorName,
+    authorEmail,
+    authorDate,
+  };
+}
+
+// Inline preview size cap: a wallpaper-sized PNG is fine, a stray video or
+// design asset checked in by mistake is not worth shipping over the bridge.
+const PREVIEW_BYTE_LIMIT = 20 * 1024 * 1024;
+
+/** `git show` plumbing that preserves raw bytes (the text path mangles them). */
+async function showBytes(repo: string, rev: string, path: string): Promise<ArrayBuffer | null> {
+  try {
+    const proc = Bun.spawn(
+      [
+        'git',
+        'show',
+        `${rev}:${path}`,
+      ],
+      {
+        cwd: repo,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    );
+    const [bytes, exitCode] = await Promise.all([
+      new Response(proc.stdout).arrayBuffer(),
+      proc.exited,
+    ]);
+    return exitCode === 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Raw bytes of `path` (at `ref`, or from the working tree) as base64 with an
+ * extension-derived mime type — the data for inline image previews.
+ */
+export async function readFileBase64(cwd: string, relPath: string, ref?: string): Promise<FilePayload> {
+  const repoRoot = await getRepoRoot(cwd);
+  if (!repoRoot) {
+    return {
+      ok: false,
+      error: `Not a git repository: ${cwd}`,
+    };
+  }
+  const mime = imageMime(relPath);
+  if (!mime) {
+    return {
+      ok: false,
+      error: `No previewable type for ${relPath}`,
+    };
+  }
+  let bytes: ArrayBuffer | null = null;
+  if (ref) {
+    bytes = await showBytes(repoRoot, ref, relPath);
+  } else {
+    // Working tree: paths come from the review model (repo-relative), but
+    // keep reads contained to the repo anyway.
+    const abs = resolve(repoRoot, relPath);
+    if (!abs.startsWith(repoRoot + sep)) {
+      return {
+        ok: false,
+        error: `Path escapes the repository: ${relPath}`,
+      };
+    }
+    const file = Bun.file(abs);
+    bytes = (await file.exists()) ? await file.arrayBuffer() : null;
+  }
+  if (!bytes) {
+    return {
+      ok: false,
+      error: `Cannot read ${relPath}${ref ? ` at ${ref}` : ''}`,
+    };
+  }
+  if (bytes.byteLength > PREVIEW_BYTE_LIMIT) {
+    return {
+      ok: false,
+      error: `File too large to preview (${Math.round(bytes.byteLength / 1024 / 1024)} MB)`,
+    };
+  }
+  return {
+    ok: true,
+    mime,
+    base64: Buffer.from(bytes).toString('base64'),
+  };
 }
 
 /** Approve = move changes into the index. */

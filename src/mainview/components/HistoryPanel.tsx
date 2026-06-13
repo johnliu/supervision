@@ -1,6 +1,8 @@
 // Sidebar history tab: the working tree on top, then the recent log. A plain
-// click reviews one commit (vs its parent); shift+click selects the range
-// between the clicked row and the current selection — the working tree counts
+// click reviews one commit (vs its parent), opening on the commit-details
+// overview (CommitDetailsPane); shift+click selects the range
+// between the clicked row and the current selection, opening on the
+// range-compare overview (RangeDetailsPane) — the working tree counts
 // as the newest row, so commit ⇄ working-tree ranges work too (head = null).
 // Both endpoints (and the rows between them) highlight so the selected span
 // reads at a glance.
@@ -157,7 +159,7 @@ export function HistoryPanel() {
             </button>
           );
         })}
-        {log.length === 0 ? <div className="px-2 py-3 text-xs text-muted-foreground">No commits yet</div> : null}
+        {/* No empty state: the working-tree row above is always present. */}
       </div>
     </div>
   );

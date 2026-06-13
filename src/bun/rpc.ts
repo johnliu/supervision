@@ -19,7 +19,10 @@ export function getCurrentRepo(): string {
   return activeGetCurrentRepo();
 }
 
-export type SupervisionRpcOptions = Pick<SupervisionHandlersOptions, 'onRepoChanged'>;
+export type SupervisionRpcOptions = Pick<SupervisionHandlersOptions, 'onRepoChanged'> & {
+  /** Webview-pushed menu mirror state (see SupervisionRPC bun.messages). */
+  onMenuStateChanged?: (state: { exportEnabled: boolean }) => void;
+};
 
 export function createSupervisionRPC(options: SupervisionRpcOptions = {}) {
   const { handlers, getCurrentRepo: getRepo } = createSupervisionHandlers({
@@ -43,6 +46,9 @@ export function createSupervisionRPC(options: SupervisionRpcOptions = {}) {
     maxRequestTime: 30_000,
     handlers: {
       requests: handlers,
+      messages: {
+        menuStateChanged: (state) => options.onMenuStateChanged?.(state),
+      },
     },
   });
 }

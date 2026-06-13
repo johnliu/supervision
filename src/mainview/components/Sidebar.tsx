@@ -17,10 +17,11 @@
 
 import { themeToTreeStyles } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { ChevronRight, FolderTree, History, MessageSquare } from 'lucide-react';
+import { ChevronRight, FileX2, FolderTree, History, MessageSquare } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { FileChange } from '../../shared/types';
+import { NO_DRAG_REGION } from '../lib/dragRegion';
 import { resolveThemeType, useReviewStore } from '../store';
 import { CommentsPanel } from './CommentsPanel';
 import { HistoryPanel } from './HistoryPanel';
@@ -88,19 +89,13 @@ function ChangedFilesTree({ files }: { files: FileChange[] }) {
   const select = useReviewStore((state) => state.select);
   const selectedPath = useReviewStore((state) => state.selectedPath);
 
-  const { paths, gitStatus, counts } = useMemo(
+  const { paths, gitStatus } = useMemo(
     () => ({
       paths: files.map((file) => file.path),
       gitStatus: files.map((file) => ({
         path: file.path,
         status: file.status,
       })),
-      counts: new Map(
-        files.map((file) => [
-          file.path,
-          file.binary ? 'bin' : `+${file.additions} −${file.deletions}`,
-        ]),
-      ),
     }),
     [
       files,
@@ -123,12 +118,8 @@ function ChangedFilesTree({ files }: { files: FileChange[] }) {
         select(selected[0]);
       }
     },
-    renderRowDecoration: ({ row }) =>
-      row.kind === 'file'
-        ? {
-            text: counts.get(row.path) ?? '',
-          }
-        : null,
+    // No +/- count decoration: long filenames truncate it more often than not,
+    // and the diff header shows the counts anyway.
   });
 
   // Reflect store-driven selection changes (keyboard nav, approve→advance) in
@@ -213,7 +204,7 @@ function Section({ title, files, defaultOpen }: { title: string; files: FileChan
 // The identity rows (project/worktree, branch/compare) live in RepoIdentity.
 function SidebarFooter({ onShowHistory }: { onShowHistory: () => void }) {
   return (
-    <div className="shrink-0 border-t border-sidebar-border p-2">
+    <div className={cn('shrink-0 border-t border-sidebar-border p-2', NO_DRAG_REGION)}>
       <RepoIdentity onShowHistory={onShowHistory} />
     </div>
   );
@@ -269,7 +260,13 @@ function FilesPanel() {
           defaultOpen={false}
         />
       ) : null}
-      {empty ? <div className="px-3 py-4 text-sm text-muted-foreground">No changes</div> : null}
+      {/* Same empty-state treatment as the Discuss tab (CommentsPanel). */}
+      {empty ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8 text-center text-xs text-muted-foreground">
+          <FileX2 className="size-4 opacity-60" />
+          <span>No changes</span>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -285,8 +282,15 @@ export function Sidebar() {
       className="flex h-full w-72 shrink-0 flex-col text-sidebar-foreground"
       style={TREE_STYLES[themeType]}
     >
-      {/* Desktop: start below the hiddenInset traffic lights. */}
-      <div className="mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-1 [.platform-desktop_&]:mt-9">
+      {/* Desktop: start below the hiddenInset traffic lights. The empty band
+          above this bar (the mt-9 clearance) stays draggable — it's the
+          window's title-bar area; the bar itself is a no-drag control. */}
+      <div
+        className={cn(
+          'mx-2 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-muted/40 p-1 [.platform-desktop_&]:mt-9',
+          NO_DRAG_REGION,
+        )}
+      >
         {TABS.map((entry) => (
           <button
             key={entry.id}
@@ -305,7 +309,7 @@ export function Sidebar() {
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">
+      <div className={cn('min-h-0 flex-1 overflow-y-auto py-2', NO_DRAG_REGION)}>
         {tab === 'files' ? <FilesPanel /> : null}
         {tab === 'history' ? <HistoryPanel /> : null}
         {tab === 'comments' ? <CommentsPanel /> : null}

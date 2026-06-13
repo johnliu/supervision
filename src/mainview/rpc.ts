@@ -51,3 +51,8 @@ export const electroview = new Electroview({
 
 /** Typed request proxy: `api.getReview(...)`, `api.stage(...)`, etc. */
 export const api = rpc.request;
+
+/** Push UI state the native menu mirrors (fire-and-forget). */
+export function sendMenuState(state: { exportEnabled: boolean }): void {
+  rpc.send.menuStateChanged(state);
+}

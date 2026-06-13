@@ -91,6 +91,8 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
   ];
   const config: SupervisionConfig = {
     ...CONFIG_DEFAULTS,
+    // Fixtures model a returning user — never greet tests with onboarding.
+    onboarded: true,
     ...fixture.config,
     ...(opts.style
       ? {
@@ -158,6 +160,43 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
     getLog: async () => {
       await wait();
       return clone(FIXTURE_LOG);
+    },
+    getCommit: async (params) => {
+      await wait();
+      const entry = FIXTURE_LOG.find((commit) => commit.hash === params?.ref || commit.shortHash === params?.ref);
+      if (!entry) {
+        return null;
+      }
+      return {
+        hash: entry.hash,
+        shortHash: entry.shortHash,
+        subject: entry.subject,
+        // A deterministic multi-line body so the details view is exercisable.
+        body: `Fixture commit body for "${entry.subject}".\n\nExplains the why behind the change across\nmultiple lines, the way real commit messages do.`,
+        authorName: entry.authorName,
+        authorEmail: 'fixture@example.com',
+        authorDate: entry.authorDate,
+      };
+    },
+    readFile: async () => {
+      await wait();
+      return {
+        ok: false,
+        error: 'File contents are not available in fixture mode',
+      };
+    },
+    // FIXTURE_LOG is newest-first and linear, so base..head is the slice from
+    // head (inclusive, HEAD when null) down to base (exclusive).
+    getRangeLog: async (params) => {
+      await wait();
+      const indexOf = (ref: string | null | undefined) =>
+        FIXTURE_LOG.findIndex((commit) => commit.hash === ref || commit.shortHash === ref);
+      const headIndex = params?.head == null ? 0 : indexOf(params.head);
+      const baseIndex = indexOf(params?.base);
+      if (headIndex === -1 || baseIndex === -1 || baseIndex <= headIndex) {
+        return [];
+      }
+      return clone(FIXTURE_LOG.slice(headIndex, baseIndex));
     },
     getRepoInfo: async () => {
       await wait();
@@ -317,6 +356,7 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
         config.theme = input.theme;
         config.palette = input.palette;
         config.diffTheme = input.diffTheme;
+        config.onboarded = input.onboarded;
       }
       return {
         ...config,

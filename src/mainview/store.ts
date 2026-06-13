@@ -5,9 +5,11 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { create } from 'zustand';
 import { CONFIG_DEFAULTS, clampFontSize } from '../shared/config';
+import { canPreviewMarkdown } from '../shared/preview';
 import type {
   AnnotationSide,
   Comment,
+  CommitDetails,
   CommitInfo,
   CompareSpec,
   DiffThemeId,
@@ -19,7 +21,7 @@ import type {
   SetRepoResult,
   ThemePreference,
 } from '../shared/types';
-import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged } from './platform';
+import { api, onMenuAction, onRepoChanged, onWorkingTreeChanged, sendMenuState } from './platform';
 
 export type DiffStyle = 'split' | 'unified';
 
@@ -45,12 +47,21 @@ export interface ScrollTarget {
 interface ReviewState {
   loading: boolean;
   error: string | null;
+  /** Failed project open (not a git repository) — shown as a modal. */
+  repoError: string | null;
   model: ReviewModel | null;
   comments: Comment[];
   compare: CompareSpec;
   selectedPath: string | null;
   /** Staged-vs-unstaged side shown for a file present in both buckets. */
   diffSide: DiffSide;
+  /** Render the selected file (markdown today) instead of its diff. Per-file:
+   * reset on every selection change. */
+  preview: boolean;
+  /** Full message of the commit under review (compare.kind === 'commit'). */
+  commitDetails: CommitDetails | null;
+  /** Commits inside the compared range, newest first (compare.kind === 'range'). */
+  rangeCommits: CommitInfo[];
   /** Current line selection in the diff for the selected file (null = none). */
   selectedLines: SelectedLineRange | null;
   /** Open inline comment composer, if any. */
@@ -61,6 +72,10 @@ interface ReviewState {
   settings: boolean;
   /** Whether the keyboard-shortcuts help overlay is showing. */
   shortcuts: boolean;
+  /** Whether first-launch onboarding has been completed (persisted). */
+  onboarded: boolean;
+  /** Whether the onboarding flow is showing. */
+  onboarding: boolean;
   diffStyle: DiffStyle;
   ignoreWhitespace: boolean;
   /** Wrap long diff lines instead of scrolling horizontally. */
@@ -96,8 +111,12 @@ interface ReviewState {
   openProject: () => Promise<void>;
   /** `git switch` to a local branch in the current worktree (footer menu). */
   switchBranch: (name: string) => Promise<void>;
-  select: (path: string) => void;
+  /** Show `path`'s diff — or, with null in commit mode, the commit overview. */
+  select: (path: string | null) => void;
   setDiffSide: (side: DiffSide) => void;
+  /** Toggle the rendered preview for the selected file (no-op when the file
+   * has nothing to preview). */
+  togglePreview: () => void;
   /** Select the next/previous file in the sidebar order (wraps around). */
   selectNextFile: () => void;
   selectPrevFile: () => void;
@@ -118,6 +137,10 @@ interface ReviewState {
   setSystemDark: (dark: boolean) => void;
   setSettings: (open: boolean) => void;
   setShortcuts: (open: boolean) => void;
+  /** Dismiss the failed-project-open modal. */
+  clearRepoError: () => void;
+  /** Mark onboarding finished (or skipped) and persist the flag. */
+  completeOnboarding: () => void;
   setCompare: (compare: CompareSpec) => Promise<void>;
   approve: (paths: string[]) => Promise<void>;
   unapprove: (paths: string[]) => Promise<void>;
@@ -146,13 +169,18 @@ interface ReviewState {
   handleMenuAction: (action: string) => void;
 }
 
-function pickSelection(model: ReviewModel, current: string | null): string | null {
+function pickSelection(model: ReviewModel, current: string | null, compare: CompareSpec): string | null {
   const paths = [
     ...model.unreviewed,
     ...model.reviewed,
   ].map((file) => file.path);
   if (current && paths.includes(current)) {
     return current;
+  }
+  // Commit and range modes open on (and fall back to) their details
+  // overview — never auto-jump into a file the user didn't pick.
+  if (compare.kind !== 'working') {
+    return null;
   }
   return model.unreviewed[0]?.path ?? model.reviewed[0]?.path ?? null;
 }
@@ -232,6 +260,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       selectedPath: null,
       selectedLines: null,
       draft: null,
+      preview: false,
+      commitDetails: null,
+      rangeCommits: [],
       comments: [],
       log: [],
       repoInfo: null,
@@ -253,16 +284,17 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       theme: get().theme,
       palette: get().palette,
       diffTheme: get().diffTheme,
+      onboarded: get().onboarded,
     });
   };
 
-  // Surface a failed switch (not a git repo). Success arrives via the
-  // onRepoChanged push above; a request that times out waiting on the dialog is
-  // harmless because that push still fires.
+  // Surface a failed switch (not a git repo) as a modal. Success arrives via
+  // the onRepoChanged push above; a request that times out waiting on the
+  // dialog is harmless because that push still fires.
   const reportSwitchResult = (result: SetRepoResult) => {
     if (!result.ok && !result.cancelled) {
       set({
-        error: result.error ?? 'Failed to open project',
+        repoError: result.error ?? 'Failed to open project',
       });
     }
   };
@@ -270,6 +302,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
   return {
     loading: false,
     error: null,
+    repoError: null,
     model: null,
     comments: [],
     compare: {
@@ -277,11 +310,18 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     },
     selectedPath: null,
     diffSide: 'new',
+    preview: false,
+    commitDetails: null,
+    rangeCommits: [],
     selectedLines: null,
     draft: null,
     quickOpen: false,
     settings: false,
     shortcuts: false,
+    // Assume onboarded until hydrateConfig reads the persisted flag, so the
+    // flow never flashes for an already-onboarded user.
+    onboarded: true,
+    onboarding: false,
     diffStyle: CONFIG_DEFAULTS.diffStyle,
     ignoreWhitespace: CONFIG_DEFAULTS.ignoreWhitespace,
     lineWrap: CONFIG_DEFAULTS.lineWrap,
@@ -302,17 +342,38 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         loading: true,
         error: null,
       });
+      const compare = get().compare;
       try {
-        const [model, comments] = await Promise.all([
+        const [model, comments, commitDetails, rangeCommits] = await Promise.all([
           api.getReview({
-            compare: get().compare,
+            compare,
           }),
           api.getComments(),
+          // The commit message / range log is part of the same render (the
+          // details overview), but auxiliary: a backend without these must
+          // not fail the review.
+          compare.kind === 'commit'
+            ? api
+                .getCommit({
+                  ref: compare.ref,
+                })
+                .catch(() => null)
+            : Promise.resolve(null),
+          compare.kind === 'range'
+            ? api
+                .getRangeLog({
+                  base: compare.base,
+                  head: compare.head,
+                })
+                .catch(() => [])
+            : Promise.resolve([]),
         ]);
         set({
           model,
           comments,
-          selectedPath: pickSelection(model, get().selectedPath),
+          commitDetails,
+          rangeCommits,
+          selectedPath: pickSelection(model, get().selectedPath, compare),
           loading: false,
         });
       } catch (error) {
@@ -346,9 +407,11 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     select: (path) => {
       set({
         selectedPath: path,
-        // A line selection, any open composer, the staged-side choice, and a
-        // pending comment jump all belong to one file; drop them on switch.
+        // A line selection, any open composer, the staged-side choice, the
+        // preview toggle, and a pending comment jump all belong to one file;
+        // drop them on switch.
         diffSide: 'new',
+        preview: false,
         selectedLines: null,
         draft: null,
         scrollTarget: null,
@@ -358,6 +421,22 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     setDiffSide: (side) => {
       set({
         diffSide: side,
+      });
+    },
+
+    togglePreview: () => {
+      const { model, selectedPath, preview } = get();
+      const file = model
+        ? [
+            ...model.unreviewed,
+            ...model.reviewed,
+          ].find((entry) => entry.path === selectedPath)
+        : undefined;
+      if (!file || !canPreviewMarkdown(file)) {
+        return;
+      }
+      set({
+        preview: !preview,
       });
     },
 
@@ -503,6 +582,20 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       });
     },
 
+    clearRepoError: () => {
+      set({
+        repoError: null,
+      });
+    },
+
+    completeOnboarding: () => {
+      set({
+        onboarded: true,
+        onboarding: false,
+      });
+      persistConfig();
+    },
+
     hydrateConfig: async () => {
       try {
         const loaded = await api.getConfig();
@@ -515,6 +608,13 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           theme: loaded.theme,
           palette: loaded.palette,
           diffTheme: loaded.diffTheme,
+          onboarded: loaded.onboarded,
+          // First launch (no config yet): walk through onboarding.
+          ...(loaded.onboarded
+            ? {}
+            : {
+                onboarding: true,
+              }),
         });
       } catch (error) {
         console.error('Failed to load config', error);
@@ -570,6 +670,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       set({
         compare,
         selectedPath: null,
+        preview: false,
       });
       await get().refresh();
     },
@@ -590,7 +691,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         ].some((file) => file.path === target);
       set({
         model,
-        selectedPath: targetExists ? target : pickSelection(model, get().selectedPath),
+        selectedPath: targetExists ? target : pickSelection(model, get().selectedPath, get().compare),
       });
     },
 
@@ -600,7 +701,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       });
       set({
         model,
-        selectedPath: pickSelection(model, get().selectedPath),
+        selectedPath: pickSelection(model, get().selectedPath, get().compare),
       });
     },
 
@@ -661,6 +762,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       set({
         selectedPath: comment.path,
         diffSide: 'new',
+        preview: false,
         selectedLines: null,
         draft: null,
         scrollTarget: {
@@ -684,7 +786,11 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           void state.refresh();
           break;
         case 'export':
-          void state.exportReview();
+          // The menu item mirrors the toolbar's disabled state, but the mirror
+          // is pushed async — ignore a click that races a comments change.
+          if (state.comments.some((comment) => comment.status === 'open')) {
+            void state.exportReview();
+          }
           break;
         case 'view:split':
           state.setDiffStyle('split');
@@ -716,4 +822,18 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       }
     },
   };
+});
+
+// Mirror the toolbar copy-button's enabled state into the native menu ("Copy
+// Comments for LLM"). Pushed on every transition between zero and some open
+// comments; the menu starts disabled on the Bun side, matching the empty store.
+let lastExportEnabled = false;
+useReviewStore.subscribe((state) => {
+  const exportEnabled = state.comments.some((comment) => comment.status === 'open');
+  if (exportEnabled !== lastExportEnabled) {
+    lastExportEnabled = exportEnabled;
+    sendMenuState({
+      exportEnabled,
+    });
+  }
 });

@@ -11,6 +11,7 @@ import {
   CheckCheck,
   ClipboardCopy,
   Columns2,
+  Eye,
   FilePen,
   Pilcrow,
   RefreshCw,
@@ -21,11 +22,14 @@ import { ContextMenu, Popover } from 'radix-ui';
 import { type ReactNode, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { EDITORS, FONT_SIZE_PRESETS } from '../../shared/config';
+import { canPreviewMarkdown } from '../../shared/preview';
 import type { EditorId } from '../../shared/types';
+import { NO_DRAG_REGION } from '../lib/dragRegion';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { FontSizeStepper } from './FontSizeStepper';
 import { Button } from './ui/button';
+import { Kbd } from './ui/kbd';
 import { Toggle } from './ui/toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
@@ -36,12 +40,30 @@ const CELL = "size-9 [&_svg:not([class*='size-'])]:size-[18px]";
 const POPUP =
   'dark z-50 rounded-lg bg-popover/95 p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0';
 
-/** Wraps a control in a tooltip opening away from the right-edge bar. */
-function Hint({ label, children }: { label: string; children: ReactNode }) {
+/** Wraps a control in a tooltip opening away from the right-edge bar.
+ * `keys` renders the control's keyboard shortcut as keycaps after the label. */
+function Hint({ label, keys, children }: { label: string; keys?: string[]; children: ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="left">{label}</TooltipContent>
+      <TooltipContent
+        side="left"
+        className={keys ? 'flex items-center gap-1.5' : undefined}
+      >
+        {label}
+        {keys ? (
+          <span className="flex items-center gap-0.5">
+            {keys.map((token) => (
+              <Kbd
+                key={token}
+                className="h-4 min-w-4 px-1 text-[0.6rem]"
+              >
+                {token}
+              </Kbd>
+            ))}
+          </span>
+        ) : null}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -79,6 +101,9 @@ function ViewToggle() {
         <Hint
           key={option.value}
           label={option.label}
+          keys={[
+            '\\',
+          ]}
         >
           <button
             type="button"
@@ -166,6 +191,8 @@ export function Toolbar() {
   const editorChoice = useReviewStore((state) => state.editor);
   const setEditor = useReviewStore((state) => state.setEditor);
   const loading = useReviewStore((state) => state.loading);
+  const preview = useReviewStore((state) => state.preview);
+  const togglePreview = useReviewStore((state) => state.togglePreview);
   const [exported, setExported] = useState(false);
 
   const pendingPaths = model?.unreviewed.map((file) => file.path) ?? [];
@@ -177,6 +204,9 @@ export function Toolbar() {
   const unstagedEntry = model?.unreviewed.find((file) => file.path === selectedPath) ?? null;
   const stagedEntry = model?.reviewed.find((file) => file.path === selectedPath) ?? null;
   const file = diffSide === 'approved' && stagedEntry ? stagedEntry : (unstagedEntry ?? stagedEntry);
+
+  // Markdown today; other renderable types (SVG, PDF…) may join later.
+  const previewable = file !== null && canPreviewMarkdown(file);
 
   const onExport = async () => {
     try {
@@ -201,11 +231,17 @@ export function Toolbar() {
         'absolute top-1/2 right-6 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-2xl bg-popover/90 p-1.5 text-popover-foreground shadow-2xl ring-1 ring-foreground/10 backdrop-blur-xl',
         'transition-opacity duration-200 hover:opacity-100 focus-within:opacity-100',
         openPopups > 0 ? 'opacity-100' : 'opacity-25',
+        NO_DRAG_REGION,
       )}
     >
       {working ? (
         <ContextMenu.Root onOpenChange={trackPopup}>
-          <Hint label={file?.staged ? `Unapprove ${file.path}` : `Approve ${file?.path ?? 'file'}`}>
+          <Hint
+            label={file?.staged ? `Unapprove ${file.path}` : `Approve ${file?.path ?? 'file'}`}
+            keys={[
+              file?.staged ? 'u' : 'a',
+            ]}
+          >
             <ContextMenu.Trigger asChild>
               <Button
                 variant="ghost"
@@ -302,7 +338,14 @@ export function Toolbar() {
         </ContextMenu.Portal>
       </ContextMenu.Root>
 
-      <Hint label={exported ? 'Copied!' : `Copy ${openComments} comment${openComments === 1 ? '' : 's'}`}>
+      <Hint
+        label={exported ? 'Copied!' : `Copy ${openComments} comment${openComments === 1 ? '' : 's'}`}
+        keys={[
+          '⌘',
+          '⇧',
+          'E',
+        ]}
+      >
         <Button
           variant="ghost"
           size="icon-lg"
@@ -324,7 +367,24 @@ export function Toolbar() {
 
       <ViewToggle />
 
-      <Hint label={lineWrap ? 'Wrap lines' : 'Disable line wrap'}>
+      <Hint
+        label={preview && previewable ? `Show diff for ${file?.path}` : `Preview ${file?.path ?? 'file'}`}
+        keys={[
+          'p',
+        ]}
+      >
+        <Toggle
+          className={cn(CELL, 'min-w-9 p-0')}
+          aria-label="Preview file"
+          disabled={!previewable}
+          pressed={preview && previewable}
+          onPressedChange={() => togglePreview()}
+        >
+          <Eye />
+        </Toggle>
+      </Hint>
+
+      <Hint label={lineWrap ? 'Disable line wrap' : 'Wrap lines'}>
         <Toggle
           className={cn(CELL, 'min-w-9 p-0')}
           aria-label="Wrap long lines"
@@ -336,7 +396,12 @@ export function Toolbar() {
       </Hint>
 
       {/* Pressed = showing whitespace changes; the default (off) hides them. */}
-      <Hint label={ignoreWhitespace ? 'Show whitespace' : 'Hide whitespace'}>
+      <Hint
+        label={ignoreWhitespace ? 'Show whitespace' : 'Hide whitespace'}
+        keys={[
+          'w',
+        ]}
+      >
         <Toggle
           className={cn(CELL, 'min-w-9 p-0')}
           aria-label="Show whitespace"
@@ -351,7 +416,12 @@ export function Toolbar() {
 
       <div className="my-0.5 h-px w-6 shrink-0 bg-border" />
 
-      <Hint label="Refresh">
+      <Hint
+        label="Refresh"
+        keys={[
+          'r',
+        ]}
+      >
         <Button
           variant="ghost"
           size="icon-lg"

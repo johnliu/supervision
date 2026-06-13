@@ -7,6 +7,7 @@
 import { X } from 'lucide-react';
 import { Dialog } from 'radix-ui';
 import { useReviewStore } from '../store';
+import { Kbd } from './ui/kbd';
 
 interface Shortcut {
   /** One or more key chords; multiple chords render separated by "/". */
@@ -173,7 +174,7 @@ const GROUPS: {
             'E',
           ],
         ],
-        label: 'Export for LLM',
+        label: 'Copy comments for LLM',
       },
     ],
   },
@@ -187,6 +188,14 @@ const GROUPS: {
           ],
         ],
         label: 'Toggle split / unified',
+      },
+      {
+        combos: [
+          [
+            'p',
+          ],
+        ],
+        label: 'Preview file (markdown)',
       },
       {
         combos: [
@@ -237,12 +246,7 @@ function Keys({ combos }: { combos: string[][] }) {
         >
           {chordIndex > 0 ? <span className="text-muted-foreground">/</span> : null}
           {chord.map((token) => (
-            <kbd
-              key={token}
-              className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border bg-muted px-1.5 font-mono text-[0.7rem] text-foreground shadow-sm"
-            >
-              {token}
-            </kbd>
+            <Kbd key={token}>{token}</Kbd>
           ))}
         </span>
       ))}

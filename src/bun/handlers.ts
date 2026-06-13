@@ -86,6 +86,9 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
     getReview: async ({ compare }) => git.getReview(currentRepo, compare),
     getRepoInfo: async () => git.getRepoInfo(currentRepo),
     getLog: async () => git.getLog(currentRepo),
+    getCommit: async ({ ref }) => git.getCommitDetails(currentRepo, ref),
+    getRangeLog: async ({ base, head }) => git.getRangeLog(currentRepo, base, head),
+    readFile: async ({ path: relPath, ref }) => git.readFileBase64(currentRepo, relPath, ref),
     stage: async ({ paths }) => {
       // git resolves the repo-relative paths against cwd, so stage/unstage
       // must run at the git root — not a subdir currentRepo (the reason the

@@ -38,9 +38,11 @@ import {
   type DiffLineAnnotation,
   type SelectedLineRange,
 } from '@pierre/diffs/react';
+import { ArrowLeft, FileX2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DIFF_THEMES } from '../../shared/config';
+import { canPreviewMarkdown, imageMime } from '../../shared/preview';
 import type { AnnotationSide, DiffThemeId } from '../../shared/types';
 import { resolveThemeType, useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
@@ -56,6 +58,7 @@ import {
   nextChangeIndex,
   stopIndexForSelection,
 } from './diffNav';
+import { ImagePreview, MarkdownPreview } from './FilePreview';
 
 type AnnotationMeta =
   | {
@@ -302,6 +305,19 @@ export function DiffPane() {
   const comments = useReviewStore((state) => state.comments);
   const diffSide = useReviewStore((state) => state.diffSide);
   const setDiffSide = useReviewStore((state) => state.setDiffSide);
+  // Ref-comparison modes: a floating pill returns to the details overview
+  // (App swaps in the commit / range pane when the selection is cleared).
+  const compare = useReviewStore((state) => state.compare);
+  const commitShortHash = useReviewStore((state) => state.commitDetails?.shortHash ?? null);
+  const select = useReviewStore((state) => state.select);
+  const overviewLabel =
+    compare.kind === 'commit'
+      ? `Commit${commitShortHash ? ` ${commitShortHash}` : ''}`
+      : compare.kind === 'range'
+        ? `${compare.base.slice(0, 7)}…${compare.head ? compare.head.slice(0, 7) : 'working tree'}`
+        : null;
+  // Toolbar Preview toggle (markdown today).
+  const preview = useReviewStore((state) => state.preview);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<ViewHandle>(null);
   // The scroll container CodeView renders (clientHeight = viewport height).
@@ -736,6 +752,13 @@ export function DiffPane() {
     scrollTopRef.current = scrollTop;
   }, []);
 
+  // Rows render at --diffs-line-height (set from fontSize below). CodeView's
+  // LAYOUT MODEL must use the same value: it defaults to 20px, and a mismatch
+  // makes the computed scrollHeight shorter than the real content (≈1px per
+  // row in the trailing render chunk), so the bottom of a long file can never
+  // be scrolled fully into view at any non-default font size (SCR-8).
+  const lineHeight = Math.round(fontSize * 1.5);
+
   // CodeView value-compares options (shallow) before applying, so stable
   // callback identities here mean cursor moves re-render NOTHING but the
   // selection attributes — no row rebuilds, no scroll restoration.
@@ -746,6 +769,9 @@ export function DiffPane() {
       theme: DIFF_THEME_PAIRS[diffTheme],
       themeType,
       layout: LAYOUT,
+      itemMetrics: {
+        lineHeight,
+      },
       enableLineSelection: true,
       lineHoverHighlight: 'both',
       enableGutterUtility: true,
@@ -856,6 +882,7 @@ export function DiffPane() {
       lineWrap,
       themeType,
       diffTheme,
+      lineHeight,
       filePath,
       setSelectedLines,
       commentOnRange,
@@ -1211,10 +1238,21 @@ export function DiffPane() {
     };
   }, []);
 
+  // What replaces the diff, if anything. Markdown preview is the explicit
+  // toolbar toggle; images render by default (their "diff" would only ever be
+  // the binary placeholder). A deleted file has no new side to render.
+  const showMarkdown = file != null && preview && canPreviewMarkdown(file);
+  const showImage = file != null && imageMime(file.path) !== null && file.status !== 'deleted';
+  // The revision the displayed "new" side comes from, for byte reads: a
+  // commit/range head reads the blob at that ref, otherwise the working tree.
+  const previewRef =
+    compare.kind === 'commit' ? compare.ref : compare.kind === 'range' ? (compare.head ?? undefined) : undefined;
+
   if (!file) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Select a file to review
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <FileX2 className="size-8 opacity-40" />
+        <span>Select a file to review</span>
       </div>
     );
   }
@@ -1225,6 +1263,19 @@ export function DiffPane() {
       data-testid="diff-pane"
       className="relative flex h-full flex-col"
     >
+      {/* Ref-comparison modes: float a way back to the details overview. Same
+          corner as the staged/unstaged switch below, but the two never
+          co-occur (ref comparisons have no staged bucket). */}
+      {overviewLabel ? (
+        <button
+          type="button"
+          onClick={() => select(null)}
+          className="absolute top-2 right-3 z-30 flex h-7 items-center gap-1.5 rounded-lg bg-popover/90 px-2.5 text-xs font-medium text-muted-foreground shadow-md ring-1 ring-foreground/10 backdrop-blur-xl transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="size-3.5" />
+          <span>{overviewLabel}</span>
+        </button>
+      ) : null}
       {/* A file that is both staged and unstaged gets a floating side switch —
           a sliding segmented control like the toolbar's view toggle, so the
           pair reads as one group. Everything else the old file bar showed
@@ -1268,7 +1319,17 @@ export function DiffPane() {
           </div>
         </div>
       ) : null}
-      {file.binary || !fileDiff ? (
+      {showMarkdown ? (
+        <MarkdownPreview
+          source={file.newContents}
+          oldSource={file.oldContents}
+        />
+      ) : showImage ? (
+        <ImagePreview
+          path={file.path}
+          gitRef={previewRef}
+        />
+      ) : file.binary || !fileDiff ? (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-background text-sm text-muted-foreground">
           {file.path} — binary file, diff not shown
         </div>
@@ -1281,11 +1342,12 @@ export function DiffPane() {
           // The diff reads --diffs-font-size / --diffs-line-height inside its
           // shadow root; custom properties inherit across the boundary, and
           // the lib's ResizeObservers re-measure rows when they change. Line
-          // height tracks the font at the default 20/13 ratio.
+          // height tracks the font at the default 20/13 ratio and MUST match
+          // options.itemMetrics.lineHeight (see diffOptions above).
           style={
             {
               '--diffs-font-size': `${fontSize}px`,
-              '--diffs-line-height': `${Math.round(fontSize * 1.5)}px`,
+              '--diffs-line-height': `${lineHeight}px`,
             } as React.CSSProperties
           }
           items={items}

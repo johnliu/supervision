@@ -159,3 +159,118 @@
     @apply font-sans;
   }
 }
+
+/* Rendered markdown (FilePreview.tsx). Hand-rolled rather than a typography
+   plugin: a small, theme-var-driven set that follows the active palette. */
+@layer components {
+  .markdown-preview {
+    @apply text-sm leading-relaxed text-foreground;
+  }
+  .markdown-preview h1,
+  .markdown-preview h2 {
+    @apply mt-6 mb-3 border-b border-border pb-1.5 font-semibold;
+  }
+  .markdown-preview h1 {
+    @apply text-xl;
+  }
+  .markdown-preview h2 {
+    @apply text-lg;
+  }
+  .markdown-preview h3,
+  .markdown-preview h4,
+  .markdown-preview h5,
+  .markdown-preview h6 {
+    @apply mt-5 mb-2 font-semibold;
+  }
+  .markdown-preview h3 {
+    @apply text-base;
+  }
+  .markdown-preview :is(h1, h2, h3, h4, h5, h6):first-child {
+    @apply mt-0;
+  }
+  .markdown-preview p,
+  .markdown-preview ul,
+  .markdown-preview ol,
+  .markdown-preview blockquote,
+  .markdown-preview pre,
+  .markdown-preview table {
+    @apply my-3;
+  }
+  .markdown-preview ul {
+    @apply list-disc pl-6;
+  }
+  .markdown-preview ol {
+    @apply list-decimal pl-6;
+  }
+  .markdown-preview li > ul,
+  .markdown-preview li > ol {
+    @apply my-1;
+  }
+  .markdown-preview blockquote {
+    @apply border-l-2 border-border pl-3 text-muted-foreground;
+  }
+  .markdown-preview code {
+    @apply rounded bg-muted/60 px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .markdown-preview pre {
+    @apply overflow-x-auto rounded-lg bg-muted/40 p-3;
+  }
+  .markdown-preview pre code {
+    @apply bg-transparent p-0 text-xs;
+  }
+  .markdown-preview a {
+    @apply text-primary underline underline-offset-2;
+  }
+  .markdown-preview hr {
+    @apply my-5 border-border;
+  }
+  .markdown-preview table {
+    @apply block w-max max-w-full border-collapse overflow-x-auto text-xs;
+  }
+  .markdown-preview th,
+  .markdown-preview td {
+    @apply border border-border px-2.5 py-1.5 text-left;
+  }
+  .markdown-preview th {
+    @apply bg-muted/40 font-semibold;
+  }
+  .markdown-preview img {
+    @apply max-w-full rounded-md;
+  }
+
+  /* Rich-diff change markers (markdownDiff.ts): GitHub-style colored bars on
+     added/removed block runs. Hues match the diff/sidebar status colors. */
+  .markdown-preview .md-block-added,
+  .markdown-preview .md-block-removed {
+    @apply my-3 rounded-md border-l-3 px-3 py-2;
+  }
+  .markdown-preview .md-block-added {
+    border-left-color: #10b981;
+    background: color-mix(in oklab, #10b981 9%, transparent);
+  }
+  .markdown-preview .md-block-removed {
+    border-left-color: #ef4444;
+    background: color-mix(in oklab, #ef4444 9%, transparent);
+    @apply opacity-80;
+  }
+  .markdown-preview :is(.md-block-added, .md-block-removed) > :first-child {
+    @apply mt-0;
+  }
+  .markdown-preview :is(.md-block-added, .md-block-removed) > :last-child {
+    @apply mb-0;
+  }
+  /* Container descent: an edited list/table renders once, with only the
+     changed items/rows tinted (markdownDiff.ts renderEditedPair). */
+  .markdown-preview li.md-li-added,
+  .markdown-preview tr.md-row-added > :is(td, th) {
+    background: color-mix(in oklab, #10b981 11%, transparent);
+  }
+  .markdown-preview li.md-li-removed,
+  .markdown-preview tr.md-row-removed > :is(td, th) {
+    background: color-mix(in oklab, #ef4444 11%, transparent);
+    @apply opacity-80;
+  }
+  .markdown-preview :is(li.md-li-added, li.md-li-removed) {
+    @apply rounded-sm;
+  }
+}

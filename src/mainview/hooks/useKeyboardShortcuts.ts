@@ -9,6 +9,7 @@
 //   c                             comment on the current selection
 //   a / u                         approve / unapprove the current file
 //   r                             refresh
+//   p                             toggle preview (markdown)
 //   \                             toggle split / unified
 //   w                             toggle ignore-whitespace
 //   Esc                           clear selection / close composer
@@ -68,6 +69,10 @@ export function useKeyboardShortcuts(): void {
         case 'r':
           event.preventDefault();
           void state.refresh();
+          break;
+        case 'p':
+          event.preventDefault();
+          state.togglePreview();
           break;
         case 'w':
           event.preventDefault();
