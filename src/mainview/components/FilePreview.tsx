@@ -11,11 +11,13 @@
 import DOMPurify from 'dompurify';
 import { ImageOff, LoaderCircle } from 'lucide-react';
 import { marked } from 'marked';
-import { useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { api } from '../platform';
+import { useReviewStore } from '../store';
 import { renderMarkdownDiff } from './markdownDiff';
 
 export function MarkdownPreview({ source, oldSource = '' }: { source: string; oldSource?: string }) {
+  const fontSize = useReviewStore((state) => state.fontSize);
   const html = useMemo(() => {
     // A brand-new file gets a plain render — an all-green document carries no
     // information the file's `added` status doesn't already.
@@ -35,10 +37,15 @@ export function MarkdownPreview({ source, oldSource = '' }: { source: string; ol
   return (
     <div
       data-testid="markdown-preview"
-      className="min-h-0 flex-1 overflow-y-auto bg-background"
+      className="min-h-0 flex-1 overflow-y-auto bg-preview"
     >
       <div
         className="markdown-preview mx-auto max-w-3xl px-8 py-8"
+        style={
+          {
+            '--preview-font-size': `${fontSize}px`,
+          } as CSSProperties
+        }
         // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized above
         dangerouslySetInnerHTML={{
           __html: html,
@@ -111,7 +118,7 @@ export function ImagePreview({ path, gitRef }: { path: string; gitRef?: string }
   return (
     <div
       data-testid="image-preview"
-      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden bg-background p-6"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-hidden bg-preview p-6"
     >
       {state.kind === 'loading' ? (
         <LoaderCircle className="size-6 animate-spin text-muted-foreground" />

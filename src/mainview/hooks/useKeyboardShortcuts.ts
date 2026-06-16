@@ -12,6 +12,7 @@
 //   p                             toggle preview (markdown)
 //   \                             toggle split / unified
 //   w                             toggle ignore-whitespace
+//   = / -                         increase / decrease text size
 //   Esc                           clear selection / close composer
 
 import { useEffect } from 'react';
@@ -77,6 +78,18 @@ export function useKeyboardShortcuts(): void {
         case 'w':
           event.preventDefault();
           state.setIgnoreWhitespace(!state.ignoreWhitespace);
+          break;
+        // '=' and its shifted '+' both grow; '-'/'_' shrink. setFontSize
+        // clamps to the configured min/max.
+        case '=':
+        case '+':
+          event.preventDefault();
+          state.setFontSize(state.fontSize + 1);
+          break;
+        case '-':
+        case '_':
+          event.preventDefault();
+          state.setFontSize(state.fontSize - 1);
           break;
         case '\\':
           event.preventDefault();
