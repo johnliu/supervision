@@ -4,6 +4,7 @@ import { DiffPane } from './components/DiffPane';
 import { OnboardingDialog } from './components/OnboardingDialog';
 import { QuickOpen } from './components/QuickOpen';
 import { RepoErrorDialog } from './components/RepoErrorDialog';
+import { SearchBar } from './components/SearchBar';
 import { SettingsDialog } from './components/SettingsDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { Sidebar } from './components/Sidebar';
@@ -104,14 +105,18 @@ export default function App() {
               and the gutter is 8px, so the card gets 8px. Revisit if the
               gutter changes or electrobun ships an SDK-26 build (26pt). */}
           <div
-            className={`flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-border bg-background shadow-sm ${NO_DRAG_REGION}`}
+            className={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-[8px] border border-border bg-background shadow-sm ${NO_DRAG_REGION}`}
           >
+            <SearchBar />
             {error ? (
               <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
                 {error}
               </div>
             ) : null}
-            <div className="min-h-0 flex-1">
+            <div
+              id="search-scope"
+              className="min-h-0 flex-1"
+            >
               {overview === 'commit' ? (
                 <CommitDetailsPane />
               ) : overview === 'range' ? (

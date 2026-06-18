@@ -111,6 +111,16 @@ function buildMenu(state: { exportEnabled: boolean }): void {
           label: 'Select All',
           role: 'selectAll',
         },
+        {
+          type: 'separator',
+        },
+        {
+          // Opens the in-content find bar; searches the visible text of
+          // whatever mode is showing (diff, commit, markdown, …).
+          label: 'Find…',
+          action: 'search:open',
+          accelerator: 'CommandOrControl+F',
+        },
       ],
     },
     {

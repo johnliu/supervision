@@ -30,6 +30,15 @@ function isEditing(target: EventTarget | null): boolean {
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Cmd/Ctrl+F opens the find bar. Handled here (in addition to the native
+      // menu accelerator) so it works while typing and in web/dev mode where
+      // there's no native menu; setSearch(true) is idempotent, so the two paths
+      // firing together on desktop is harmless.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key === 'f' || event.key === 'F')) {
+        event.preventDefault();
+        useReviewStore.getState().setSearch(true);
+        return;
+      }
       if (isEditing(event.target)) {
         return;
       }

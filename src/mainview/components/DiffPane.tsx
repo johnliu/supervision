@@ -44,7 +44,7 @@ import { cn } from '@/lib/utils';
 import { DIFF_THEMES } from '../../shared/config';
 import { canPreviewMarkdown, imageMime } from '../../shared/preview';
 import type { AnnotationSide, DiffThemeId } from '../../shared/types';
-import { resolveThemeType, useReviewStore } from '../store';
+import { type DiffSearchLine, resolveThemeType, useReviewStore } from '../store';
 import { CommentComposer, CommentThread } from './CommentThread';
 import {
   buildNavStops,
@@ -318,6 +318,9 @@ export function DiffPane() {
         : null;
   // Toolbar Preview toggle (markdown today).
   const preview = useReviewStore((state) => state.preview);
+  // While the find bar is open we expand every collapsed region so the whole
+  // file is rendered and any match (even in unchanged code) can be scrolled to.
+  const searchOpen = useReviewStore((state) => state.search);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<ViewHandle>(null);
   // The scroll container CodeView renders (clientHeight = viewport height).
@@ -434,6 +437,73 @@ export function DiffPane() {
   );
   const navStopsRef = useRef<NavStop[]>([]);
   navStopsRef.current = navStops;
+
+  // Publish a searchable model of the diff for the find bar (SearchBar.tsx): one
+  // entry per row, with the text and the (line, side) CodeView scrolls to. The
+  // model is built from a FULLY-EXPANDED stop list (every gap revealed) so it
+  // covers the whole file — changed lines, context, AND otherwise-collapsed
+  // unchanged code — giving the find bar a stable total count and a jump target
+  // for any match. The renderer is told to `expandUnchanged` while the bar is
+  // open (diffOptions above), so those rows actually render and can be scrolled
+  // to. Off-screen rows aren't in the DOM (virtualization), but they ARE in this
+  // model, which is the point.
+  const setDiffSearch = useReviewStore((state) => state.setDiffSearch);
+  useEffect(() => {
+    const showMarkdown = file != null && preview && canPreviewMarkdown(file);
+    const showImage = file != null && imageMime(file.path) !== null && file.status !== 'deleted';
+    if (!file || !fileDiff || file.binary || showMarkdown || showImage) {
+      setDiffSearch(null);
+      return;
+    }
+    // Reveal every gap (one entry per possible expand index; pushCollapsedRange
+    // clamps the over-large counts to each gap's real size).
+    const fullyExpanded: ExpansionMap = new Map();
+    for (let index = 0; index <= fileDiff.hunks.length; index++) {
+      fullyExpanded.set(index, {
+        fromStart: Number.MAX_SAFE_INTEGER,
+        fromEnd: Number.MAX_SAFE_INTEGER,
+      });
+    }
+    const fullStops = buildNavStops(fileDiff, diffStyle, countLines(newContents), fullyExpanded);
+    const newLines = newContents.split('\n');
+    const oldLines = oldContents.split('\n');
+    const lines: DiffSearchLine[] = [];
+    for (const stop of fullStops) {
+      if (stop.kind !== 'line') {
+        continue;
+      }
+      const text =
+        stop.addLine != null
+          ? (newLines[stop.addLine - 1] ?? '')
+          : stop.delLine != null
+            ? (oldLines[stop.delLine - 1] ?? '')
+            : '';
+      lines.push({
+        text,
+        line: stop.line,
+        side: stop.side,
+      });
+    }
+    setDiffSearch({
+      path: file.path,
+      lines,
+    });
+  }, [
+    file,
+    fileDiff,
+    diffStyle,
+    preview,
+    newContents,
+    oldContents,
+    setDiffSearch,
+  ]);
+  // Clear the published model when the diff pane unmounts.
+  useEffect(
+    () => () => setDiffSearch(null),
+    [
+      setDiffSearch,
+    ],
+  );
   // Rebuild stops for a hypothetical expansion map, closing over the current
   // render's diff/inputs. recordExpansion uses this to refresh navStopsRef
   // synchronously, so a j/k pressed in the same frame as an expand already sees
@@ -772,6 +842,9 @@ export function DiffPane() {
       itemMetrics: {
         lineHeight,
       },
+      // Render the whole file (no collapsed "N unmodified lines" bars) while the
+      // find bar is open, so the find bar can search and scroll to any line.
+      expandUnchanged: searchOpen,
       enableLineSelection: true,
       lineHoverHighlight: 'both',
       enableGutterUtility: true,
@@ -883,6 +956,7 @@ export function DiffPane() {
       themeType,
       diffTheme,
       lineHeight,
+      searchOpen,
       filePath,
       setSelectedLines,
       commentOnRange,

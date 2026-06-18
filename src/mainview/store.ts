@@ -37,11 +37,24 @@ export interface Draft {
   endSide?: AnnotationSide;
 }
 
-/** A one-shot "scroll the diff here" request (jump-to-comment). */
+/** A one-shot "scroll the diff here" request (jump-to-comment, find-bar jump). */
 export interface ScrollTarget {
   path: string;
   line: number;
   side: AnnotationSide;
+}
+
+/** One displayed diff row, with the text to search and the coordinates the
+ * CodeView scrolls to. Published by the DiffPane so the find bar can search the
+ * whole diff (every shown row, not just the virtualized-into-view ones). */
+export interface DiffSearchLine {
+  text: string;
+  line: number;
+  side: AnnotationSide;
+}
+export interface DiffSearchModel {
+  path: string;
+  lines: DiffSearchLine[];
 }
 
 interface ReviewState {
@@ -68,6 +81,13 @@ interface ReviewState {
   draft: Draft | null;
   /** Whether the Cmd+K quick-open file switcher is showing. */
   quickOpen: boolean;
+  /** Whether the Cmd+F find bar is showing. */
+  search: boolean;
+  /** Current find-bar query (searches the visible content of any mode). */
+  searchQuery: string;
+  /** Searchable model of the diff currently shown (null in other modes), so
+   * the find bar can search every row, including ones scrolled out of view. */
+  diffSearch: DiffSearchModel | null;
   /** Whether the settings panel is showing. */
   settings: boolean;
   /** Whether the keyboard-shortcuts help overlay is showing. */
@@ -124,6 +144,11 @@ interface ReviewState {
   openDraft: (draft: Draft) => void;
   closeDraft: () => void;
   setQuickOpen: (open: boolean) => void;
+  setSearch: (open: boolean) => void;
+  setSearchQuery: (query: string) => void;
+  setDiffSearch: (model: DiffSearchModel | null) => void;
+  /** Request the diff scroll to a line (find-bar jump). */
+  setScrollTarget: (target: ScrollTarget | null) => void;
   /** Open the composer for a (single- or multi-line) selection range. */
   commentOnRange: (path: string, range: SelectedLineRange) => void;
   setDiffStyle: (style: DiffStyle) => void;
@@ -316,6 +341,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     selectedLines: null,
     draft: null,
     quickOpen: false,
+    search: false,
+    searchQuery: '',
+    diffSearch: null,
     settings: false,
     shortcuts: false,
     // Assume onboarded until hydrateConfig reads the persisted flag, so the
@@ -490,6 +518,30 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     setQuickOpen: (open) => {
       set({
         quickOpen: open,
+      });
+    },
+
+    setSearch: (open) => {
+      set({
+        search: open,
+      });
+    },
+
+    setSearchQuery: (query) => {
+      set({
+        searchQuery: query,
+      });
+    },
+
+    setDiffSearch: (model) => {
+      set({
+        diffSearch: model,
+      });
+    },
+
+    setScrollTarget: (target) => {
+      set({
+        scrollTarget: target,
       });
     },
 
@@ -809,6 +861,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
           break;
         case 'go:quick-open':
           state.setQuickOpen(true);
+          break;
+        case 'search:open':
+          state.setSearch(true);
           break;
         case 'open-project':
           void state.openProject();
