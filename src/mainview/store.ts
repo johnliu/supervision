@@ -375,6 +375,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         const [model, comments, commitDetails, rangeCommits] = await Promise.all([
           api.getReview({
             compare,
+            ignoreWhitespace: get().ignoreWhitespace,
           }),
           api.getComments(),
           // The commit message / range log is part of the same render (the
@@ -572,6 +573,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         ignoreWhitespace: value,
       });
       persistConfig();
+      // The diff is computed server-side now, so the new setting only takes
+      // effect on a refetch.
+      void get().refresh();
     },
 
     setLineWrap: (value) => {
@@ -734,6 +738,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       const target = previous ? nextUnstagedAfter(previous, paths) : null;
       const model = await api.stage({
         paths,
+        ignoreWhitespace: get().ignoreWhitespace,
       });
       const targetExists =
         target !== null &&
@@ -750,6 +755,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     unapprove: async (paths) => {
       const model = await api.unstage({
         paths,
+        ignoreWhitespace: get().ignoreWhitespace,
       });
       set({
         model,

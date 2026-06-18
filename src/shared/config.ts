@@ -149,6 +149,14 @@ export function clampDiffTheme(value: unknown): DiffThemeId {
   return DIFF_THEMES.some((theme) => theme.id === value) ? (value as DiffThemeId) : CONFIG_DEFAULTS.diffTheme;
 }
 
+/** The shiki dark/light theme-name pair for a diff theme id. */
+export function diffThemePair(id: DiffThemeId): {
+  dark: string;
+  light: string;
+} {
+  return (DIFF_THEMES.find((theme) => theme.id === id) ?? DIFF_THEMES[0]).themes;
+}
+
 /** Theme choices the settings dialog offers, in display order. */
 export const THEMES: Array<{
   id: ThemePreference;

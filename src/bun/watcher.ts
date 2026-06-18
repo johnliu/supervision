@@ -14,6 +14,16 @@
 //      gitignored straggler not in the startup snapshot still can't trigger a
 //      refresh. check-ignore is index-aware, so tracked files always count as
 //      visible even if a pattern matches.
+//
+// The snapshot in layer 1 is frozen at startup, so a gitignored directory that
+// appears LATER — the common case: launch the app, then start a dev server that
+// creates .next/.turbo/coverage/… — escapes it. chokidar then watches and walks
+// that tree, and every churned file hits layer 2's check-ignore. With
+// unique filenames (content-hashed bundler chunks, hot-update files, logs) the
+// memo never hits, so it's an unbounded subprocess storm that pegs the CPU even
+// though no refresh ever fires. Layer 1b closes the gap: the first `addDir` for
+// such a tree records it in the live ignore set and unwatches the subtree, so
+// the cost is one check-ignore per directory, not one per file.
 
 import path from 'node:path';
 import { type FSWatcher, watch } from 'chokidar';
@@ -30,6 +40,23 @@ const IGNORED_SEGMENTS = new Set([
   '.supervision',
   '.DS_Store',
 ]);
+
+// The chokidar events we subscribe to. `addDir` is load-bearing: it's the signal
+// that a directory missing from the startup snapshot has appeared and may need
+// pruning (see layer 1b in the module comment).
+const WATCH_EVENTS = [
+  'add',
+  'change',
+  'unlink',
+  'addDir',
+  'unlinkDir',
+] as const;
+type WatchEvent = (typeof WATCH_EVENTS)[number];
+
+// Bound on the check-ignore memo. A pathological churn of unique paths under a
+// *visible* dir would otherwise grow it without limit; dropping it wholesale is
+// safe since each entry is cheap to recompute.
+const IGNORE_CACHE_CAP = 4096;
 
 /**
  * One-time snapshot of the paths git ignores, with fully-ignored directories
@@ -65,6 +92,11 @@ function loadIgnoredPaths(root: string): string[] {
 
 export interface WatchHandle {
   close: () => Promise<void>;
+  // Number of `git check-ignore` subprocesses spawned so far. Observability hook
+  // for tests: a churning gitignored tree that's been pruned spawns one per
+  // directory; an unpruned one spawns one per file (the regression). Not used in
+  // production.
+  checkIgnoreCount: () => number;
 }
 
 /**
@@ -73,10 +105,12 @@ export interface WatchHandle {
  */
 export function watchWorkingTree(root: string, onChange: () => void, debounceMs = 200): WatchHandle {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const ignoredPaths = loadIgnoredPaths(root);
+  // Seeded from the startup snapshot, then grown at runtime as `addDir` events
+  // surface gitignored trees that appeared after launch (layer 1b).
+  const ignoredPaths = new Set(loadIgnoredPaths(root));
 
   // Synchronous: a segment hits the structural list, or the path is (under) a
-  // gitignored entry from the startup snapshot.
+  // gitignored entry from the snapshot.
   const isIgnored = (rel: string): boolean => {
     if (rel.split(path.sep).some((segment) => IGNORED_SEGMENTS.has(segment))) {
       return true;
@@ -99,9 +133,14 @@ export function watchWorkingTree(root: string, onChange: () => void, debounceMs 
   // authority (honors nested .gitignore, .git/info/exclude, global excludes);
   // caching the promise memoizes and dedupes bursts from the same path.
   const ignoreCache = new Map<string, Promise<boolean>>();
+  let checkIgnoreSpawns = 0;
   const isGitIgnored = (rel: string): Promise<boolean> => {
     let result = ignoreCache.get(rel);
     if (!result) {
+      if (ignoreCache.size >= IGNORE_CACHE_CAP) {
+        ignoreCache.clear();
+      }
+      checkIgnoreSpawns++;
       // on error, treat as visible (safe: we refresh)
       result = git(root, [
         'check-ignore',
@@ -133,7 +172,17 @@ export function watchWorkingTree(root: string, onChange: () => void, debounceMs 
     }, debounceMs);
   };
 
-  const handleEvent = async (fullPath: string) => {
+  // chokidar's FSWatcher is an EventEmitter at runtime, but under Bun's type
+  // environment the inherited instance methods don't resolve (TS sees only the
+  // static). Reach them through a minimal structural type. `on` listeners
+  // receive the changed path; `unwatch` prunes a subtree; `getWatched` reports
+  // the watched dirs (for the test hook).
+  const ctrl = watcher as unknown as {
+    on: (event: string, listener: (changedPath: string) => void) => void;
+    unwatch: (paths: string) => void;
+  };
+
+  const handleEvent = async (event: WatchEvent, fullPath: string) => {
     const rel = toRel(fullPath);
     if (rel === null) {
       schedule();
@@ -146,29 +195,25 @@ export function watchWorkingTree(root: string, onChange: () => void, debounceMs 
       return;
     }
     if (await isGitIgnored(rel)) {
+      // Layer 1b: a gitignored directory that wasn't in the startup snapshot.
+      // Fold it into the live ignore set (so any re-discovery is pruned
+      // synchronously) and unwatch the subtree, so a churning build/cache dir
+      // can't keep firing an event — and a check-ignore — per file.
+      if (event === 'addDir') {
+        ignoredPaths.add(rel);
+        ctrl.unwatch(fullPath);
+      }
       return;
     }
     schedule();
   };
 
-  // chokidar's FSWatcher is an EventEmitter at runtime, but under Bun's type
-  // environment the inherited instance `.on` doesn't resolve (TS sees only the
-  // static). Subscribe through a minimal structural type. Each listener receives
-  // the changed path.
-  const emitter = watcher as unknown as {
-    on: (event: string, listener: (changedPath: string) => void) => void;
-  };
-  for (const event of [
-    'add',
-    'change',
-    'unlink',
-    'addDir',
-    'unlinkDir',
-  ] as const) {
-    emitter.on(event, handleEvent);
+  for (const event of WATCH_EVENTS) {
+    ctrl.on(event, (changedPath) => void handleEvent(event, changedPath));
   }
 
   return {
+    checkIgnoreCount: () => checkIgnoreSpawns,
     close: async () => {
       if (timer) {
         clearTimeout(timer);

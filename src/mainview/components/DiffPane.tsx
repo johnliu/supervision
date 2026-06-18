@@ -29,7 +29,7 @@
 // scroller's background is synced to the diff's own surface (onPostRender) so a
 // diff shorter than the pane doesn't show a differently-shaded void below it.
 
-import { parseDiffFromFile } from '@pierre/diffs';
+import { processFile } from '@pierre/diffs';
 import {
   CodeView,
   type CodeViewDiffItem,
@@ -37,6 +37,7 @@ import {
   type CodeViewProps,
   type DiffLineAnnotation,
   type SelectedLineRange,
+  useWorkerPool,
 } from '@pierre/diffs/react';
 import { ArrowLeft, FileX2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -292,7 +293,6 @@ export function DiffPane() {
   const model = useReviewStore((state) => state.model);
   const selectedPath = useReviewStore((state) => state.selectedPath);
   const diffStyle = useReviewStore((state) => state.diffStyle);
-  const ignoreWhitespace = useReviewStore((state) => state.ignoreWhitespace);
   const lineWrap = useReviewStore((state) => state.lineWrap);
   const fontSize = useReviewStore((state) => state.fontSize);
   const themeType = useReviewStore((state) => resolveThemeType(state.theme, state.systemDark));
@@ -395,23 +395,41 @@ export function DiffPane() {
   const oldContents = file?.oldContents ?? '';
   const newContents = file?.newContents ?? '';
   const binary = file?.binary ?? false;
+
+  // The highlight worker pool (App provides it; undefined if disabled/failed, in
+  // which case CodeView highlights synchronously). The pool is a singleton
+  // created once, so push theme switches to it here — otherwise a diff
+  // highlighted by the worker would keep the theme it booted with.
+  const workerPool = useWorkerPool();
+  useEffect(() => {
+    void workerPool?.setRenderOptions({
+      theme: DIFF_THEME_PAIRS[diffTheme],
+    });
+  }, [
+    workerPool,
+    diffTheme,
+  ]);
+  // Parse git's own diff (file.patch) instead of recomputing it in JS. We hand
+  // `processFile` the full old/new contents so the result is a complete
+  // (non-partial) diff — collapse/expand and line text work exactly as before —
+  // but the hunks come from git, which sidesteps the client-side Myers diff that
+  // froze the UI on large or heavily-changed files. `ignoreWhitespace` is baked
+  // into the patch server-side, so it isn't a parse input here.
   const fileDiff = useMemo(
     () =>
       !file || binary
         ? null
-        : parseDiffFromFile(
-            {
+        : (processFile(file.patch, {
+            isGitDiff: true,
+            oldFile: {
               name: oldName,
               contents: oldContents,
             },
-            {
+            newFile: {
               name: newName,
               contents: newContents,
             },
-            {
-              ignoreWhitespace,
-            },
-          ),
+          }) ?? null),
     [
       file,
       binary,
@@ -419,7 +437,6 @@ export function DiffPane() {
       newName,
       oldContents,
       newContents,
-      ignoreWhitespace,
     ],
   );
 
@@ -1437,7 +1454,6 @@ export function DiffPane() {
           onSelectedLinesChange={handleSelectionChange}
           onScroll={handleScroll}
           renderAnnotation={renderAnnotation}
-          disableWorkerPool
         />
       )}
     </div>

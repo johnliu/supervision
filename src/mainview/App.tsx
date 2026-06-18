@@ -1,4 +1,6 @@
+import { WorkerPoolContextProvider } from '@pierre/diffs/react';
 import { useEffect } from 'react';
+import { diffThemePair } from '../shared/config';
 import { CommitDetailsPane, RangeDetailsPane } from './components/CommitDetailsPane';
 import { DiffPane } from './components/DiffPane';
 import { OnboardingDialog } from './components/OnboardingDialog';
@@ -11,6 +13,7 @@ import { Sidebar } from './components/Sidebar';
 import { Toolbar } from './components/Toolbar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { diffWorkerFactory, DIFF_WORKER_POOL_SIZE } from './diffWorker';
 import { DRAG_REGION, NO_DRAG_REGION } from './lib/dragRegion';
 import { resolveThemeType, useReviewStore } from './store';
 
@@ -28,6 +31,10 @@ export default function App() {
   const palette = useReviewStore((state) => state.palette);
   const systemDark = useReviewStore((state) => state.systemDark);
   const setSystemDark = useReviewStore((state) => state.setSystemDark);
+  // Initial highlighter theme for the worker pool (created once). Live theme
+  // switches are pushed to the pool from DiffPane; this just avoids a first-paint
+  // mismatch before config hydrates.
+  const initialDiffTheme = useReviewStore((state) => state.diffTheme);
 
   useKeyboardShortcuts();
 
@@ -93,8 +100,17 @@ export default function App() {
   // titlebar/traffic lights float over it), and the working area is an inset
   // rounded card — the Messages/Claude layout.
   return (
-    <TooltipProvider>
-      {/* The window shell is one big drag region; the sidebar controls, the
+    <WorkerPoolContextProvider
+      poolOptions={{
+        workerFactory: diffWorkerFactory,
+        poolSize: DIFF_WORKER_POOL_SIZE,
+      }}
+      highlighterOptions={{
+        theme: diffThemePair(initialDiffTheme),
+      }}
+    >
+      <TooltipProvider>
+        {/* The window shell is one big drag region; the sidebar controls, the
           content card, and the toolbar punch no-drag holes (see dragRegion.ts),
           leaving the inset frame and the sidebar's top band to move the window. */}
       <div className={`relative flex h-screen w-screen overflow-hidden bg-sidebar text-foreground ${DRAG_REGION}`}>
@@ -134,6 +150,7 @@ export default function App() {
       <ShortcutsDialog />
       <OnboardingDialog />
       <RepoErrorDialog />
-    </TooltipProvider>
+      </TooltipProvider>
+    </WorkerPoolContextProvider>
   );
 }

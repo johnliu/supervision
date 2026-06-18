@@ -83,28 +83,36 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
         isRepo: root !== null,
       };
     },
-    getReview: async ({ compare }) => git.getReview(currentRepo, compare),
+    getReview: async ({ compare, ignoreWhitespace }) => git.getReview(currentRepo, compare, ignoreWhitespace),
     getRepoInfo: async () => git.getRepoInfo(currentRepo),
     getLog: async () => git.getLog(currentRepo),
     getCommit: async ({ ref }) => git.getCommitDetails(currentRepo, ref),
     getRangeLog: async ({ base, head }) => git.getRangeLog(currentRepo, base, head),
     readFile: async ({ path: relPath, ref }) => git.readFileBase64(currentRepo, relPath, ref),
-    stage: async ({ paths }) => {
+    stage: async ({ paths, ignoreWhitespace }) => {
       // git resolves the repo-relative paths against cwd, so stage/unstage
       // must run at the git root — not a subdir currentRepo (the reason the
       // dev app used to need SUPERVISION_REPO).
       const root = await repoRoot();
       await git.stage(root, paths);
-      return git.getReview(root, {
-        kind: 'working',
-      });
+      return git.getReview(
+        root,
+        {
+          kind: 'working',
+        },
+        ignoreWhitespace,
+      );
     },
-    unstage: async ({ paths }) => {
+    unstage: async ({ paths, ignoreWhitespace }) => {
       const root = await repoRoot();
       await git.unstage(root, paths);
-      return git.getReview(root, {
-        kind: 'working',
-      });
+      return git.getReview(
+        root,
+        {
+          kind: 'working',
+        },
+        ignoreWhitespace,
+      );
     },
     getComments: async () => comments.readComments(await repoRoot()),
     saveComment: async (input) => comments.addComment(await repoRoot(), input),

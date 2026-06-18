@@ -76,6 +76,20 @@ export async function git(repo: string, args: string[]): Promise<GitResult> {
   }
 }
 
+// The patch carries only git's hunks (default 3-line context) — the client
+// supplies the full contents separately, so there's no need to inflate the
+// patch with the whole file.
+const DIFF_CONTEXT = 3;
+
+/** `--ignore-all-space` when whitespace is being ignored, else nothing. */
+function whitespaceArgs(ignoreWhitespace: boolean): string[] {
+  return ignoreWhitespace
+    ? [
+        '--ignore-all-space',
+      ]
+    : [];
+}
+
 /** Contents of a blob at `rev` ('HEAD', '' for the index, a sha…); '' if absent. */
 async function showContents(repo: string, rev: string, path: string): Promise<string> {
   const res = await git(repo, [
@@ -402,6 +416,41 @@ async function untrackedStat(repo: string, path: string): Promise<DiffStat> {
 }
 
 /**
+ * git's unified diff for a tracked change. Unstaged compares the index →
+ * working tree; staged compares HEAD → index. `-M` keeps renames as a single
+ * rename patch (the name-status pass already detected them).
+ */
+async function trackedPatch(
+  repo: string,
+  staged: boolean,
+  entry: NameStatusEntry,
+  ignoreWhitespace: boolean,
+): Promise<string> {
+  const paths = entry.oldPath
+    ? [
+        entry.oldPath,
+        entry.path,
+      ]
+    : [
+        entry.path,
+      ];
+  const res = await git(repo, [
+    'diff',
+    ...(staged
+      ? [
+          '--staged',
+        ]
+      : []),
+    `-U${DIFF_CONTEXT}`,
+    '-M',
+    ...whitespaceArgs(ignoreWhitespace),
+    '--',
+    ...paths,
+  ]);
+  return res.stdout;
+}
+
+/**
  * Old/new contents for a tracked change. Unstaged compares the index → working
  * tree; staged compares HEAD → index. Renames read the old name on the old side.
  */
@@ -426,22 +475,34 @@ async function trackedContents(
   };
 }
 
-async function toFileChange(repo: string, entry: NameStatusEntry, staged: boolean): Promise<FileChange> {
-  // Stat first: a binary file's contents are never read (the whole point of the
-  // flag), so we can't parallelize the contents fetch with it.
+async function toFileChange(
+  repo: string,
+  entry: NameStatusEntry,
+  staged: boolean,
+  ignoreWhitespace: boolean,
+): Promise<FileChange> {
+  // Stat first: a binary file gets no patch or contents (the point of the flag),
+  // so we can't unconditionally parallelize those fetches with it.
   const stat = await trackedStat(repo, staged, entry);
-  const contents = stat.binary
-    ? {
-        oldContents: '',
-        newContents: '',
-      }
-    : await trackedContents(repo, staged, entry);
+  const [contents, patch] = stat.binary
+    ? [
+        {
+          oldContents: '',
+          newContents: '',
+        },
+        '',
+      ]
+    : await Promise.all([
+        trackedContents(repo, staged, entry),
+        trackedPatch(repo, staged, entry, ignoreWhitespace),
+      ]);
   return {
     path: entry.path,
     oldPath: entry.oldPath,
     status: entry.status,
     oldContents: contents.oldContents,
     newContents: contents.newContents,
+    patch,
     additions: stat.additions,
     deletions: stat.deletions,
     binary: stat.binary,
@@ -450,13 +511,33 @@ async function toFileChange(repo: string, entry: NameStatusEntry, staged: boolea
   };
 }
 
-async function untrackedChange(repo: string, path: string): Promise<FileChange> {
+async function untrackedChange(repo: string, path: string, ignoreWhitespace: boolean): Promise<FileChange> {
   const stat = await untrackedStat(repo, path);
+  // --no-index diffs the file against /dev/null (all additions); exits 1 on a
+  // difference, which is the normal case here.
+  const [newContents, patch] = stat.binary
+    ? [
+        '',
+        '',
+      ]
+    : await Promise.all([
+        workingFile(repo, path),
+        git(repo, [
+          'diff',
+          '--no-index',
+          `-U${DIFF_CONTEXT}`,
+          ...whitespaceArgs(ignoreWhitespace),
+          '--',
+          '/dev/null',
+          path,
+        ]).then((res) => res.stdout),
+      ]);
   return {
     path,
     status: 'untracked',
     oldContents: '',
-    newContents: stat.binary ? '' : await workingFile(repo, path),
+    newContents,
+    patch,
     additions: stat.additions,
     deletions: stat.deletions,
     binary: stat.binary,
@@ -465,7 +546,7 @@ async function untrackedChange(repo: string, path: string): Promise<FileChange> 
   };
 }
 
-async function getWorkingReview(repoRoot: string): Promise<ReviewModel> {
+async function getWorkingReview(repoRoot: string, ignoreWhitespace: boolean): Promise<ReviewModel> {
   const [stagedRes, unstagedRes, untrackedRes] = await Promise.all([
     git(repoRoot, [
       'diff',
@@ -491,9 +572,9 @@ async function getWorkingReview(repoRoot: string): Promise<ReviewModel> {
   const untrackedPaths = untrackedRes.stdout.split('\0').filter((p) => p.length > 0);
 
   const [reviewed, unstaged, untracked] = await Promise.all([
-    Promise.all(stagedEntries.map((e) => toFileChange(repoRoot, e, true))),
-    Promise.all(unstagedEntries.map((e) => toFileChange(repoRoot, e, false))),
-    Promise.all(untrackedPaths.map((p) => untrackedChange(repoRoot, p))),
+    Promise.all(stagedEntries.map((e) => toFileChange(repoRoot, e, true, ignoreWhitespace))),
+    Promise.all(unstagedEntries.map((e) => toFileChange(repoRoot, e, false, ignoreWhitespace))),
+    Promise.all(untrackedPaths.map((p) => untrackedChange(repoRoot, p, ignoreWhitespace))),
   ]);
 
   return {
@@ -523,8 +604,84 @@ async function resolveBase(repoRoot: string, ref: string): Promise<string> {
   return res.exitCode === 0 ? `${ref}^` : EMPTY_TREE;
 }
 
+/**
+ * One file's change for a revision-based diff. `revs` are the endpoints passed
+ * straight to `git diff` — `[base, head]` for a ref pair, `[base]` for
+ * base→worktree (`head` null). numstat gives the counts + binary flag, the
+ * patch gives git's hunks, and the old/new blobs supply the line text: the old
+ * side is `base`; the new side is `head`'s blob for a ref pair, or the working
+ * tree for base→worktree.
+ */
+async function refChange(
+  repoRoot: string,
+  base: string,
+  head: string | null,
+  entry: NameStatusEntry,
+  ignoreWhitespace: boolean,
+): Promise<FileChange> {
+  const revs = head === null ? [base] : [base, head];
+  const oldName = entry.oldPath ?? entry.path;
+  const paths = entry.oldPath
+    ? [
+        entry.oldPath,
+        entry.path,
+      ]
+    : [
+        entry.path,
+      ];
+  const numstat = await git(repoRoot, [
+    'diff',
+    '--numstat',
+    ...revs,
+    '--',
+    ...paths,
+  ]);
+  const stat = parseNumstat(numstat.stdout);
+  const [oldContents, newContents, patch] = stat.binary
+    ? [
+        '',
+        '',
+        '',
+      ]
+    : await Promise.all([
+        showContents(repoRoot, base, oldName),
+        head === null
+          ? entry.status === 'deleted'
+            ? Promise.resolve('')
+            : workingFile(repoRoot, entry.path)
+          : showContents(repoRoot, head, entry.path),
+        git(repoRoot, [
+          'diff',
+          `-U${DIFF_CONTEXT}`,
+          '-M',
+          ...whitespaceArgs(ignoreWhitespace),
+          ...revs,
+          '--',
+          ...paths,
+        ]).then((res) => res.stdout),
+      ]);
+  return {
+    path: entry.path,
+    oldPath: entry.oldPath,
+    status: entry.status,
+    oldContents,
+    newContents,
+    patch,
+    additions: stat.additions,
+    deletions: stat.deletions,
+    binary: stat.binary,
+    staged: false,
+    untracked: false,
+  };
+}
+
 /** File changes between two refs (no staging concept — all "unreviewed"). */
-async function refFileChanges(repoRoot: string, base: string, head: string): Promise<FileChange[]> {
+async function refFileChanges(
+  repoRoot: string,
+  base: string,
+  head: string,
+  ignoreWhitespace: boolean,
+): Promise<FileChange[]> {
   const ns = await git(repoRoot, [
     'diff',
     '--name-status',
@@ -536,48 +693,7 @@ async function refFileChanges(repoRoot: string, base: string, head: string): Pro
     throw new Error(ns.stderr.trim() || `git diff ${base} ${head} failed`);
   }
   const entries = parseNameStatusZ(ns.stdout);
-  return Promise.all(
-    entries.map(async (entry): Promise<FileChange> => {
-      const paths = entry.oldPath
-        ? [
-            entry.oldPath,
-            entry.path,
-          ]
-        : [
-            entry.path,
-          ];
-      const numstat = await git(repoRoot, [
-        'diff',
-        '--numstat',
-        base,
-        head,
-        '--',
-        ...paths,
-      ]);
-      const stat = parseNumstat(numstat.stdout);
-      const [oldContents, newContents] = stat.binary
-        ? [
-            '',
-            '',
-          ]
-        : await Promise.all([
-            showContents(repoRoot, base, entry.oldPath ?? entry.path),
-            showContents(repoRoot, head, entry.path),
-          ]);
-      return {
-        path: entry.path,
-        oldPath: entry.oldPath,
-        status: entry.status,
-        oldContents,
-        newContents,
-        additions: stat.additions,
-        deletions: stat.deletions,
-        binary: stat.binary,
-        staged: false,
-        untracked: false,
-      };
-    }),
-  );
+  return Promise.all(entries.map((entry) => refChange(repoRoot, base, head, entry, ignoreWhitespace)));
 }
 
 /**
@@ -585,7 +701,11 @@ async function refFileChanges(repoRoot: string, base: string, head: string): Pro
  * `git diff <base>` (worktree vs base, staged or not), plus untracked files —
  * which diff never reports — the same way the working review finds them.
  */
-async function workingRangeChanges(repoRoot: string, base: string): Promise<FileChange[]> {
+async function workingRangeChanges(
+  repoRoot: string,
+  base: string,
+  ignoreWhitespace: boolean,
+): Promise<FileChange[]> {
   const [ns, untrackedRes] = await Promise.all([
     git(repoRoot, [
       'diff',
@@ -606,48 +726,8 @@ async function workingRangeChanges(repoRoot: string, base: string): Promise<File
   const entries = parseNameStatusZ(ns.stdout);
   const untrackedPaths = untrackedRes.stdout.split('\0').filter((p) => p.length > 0);
   const [tracked, untracked] = await Promise.all([
-    Promise.all(
-      entries.map(async (entry): Promise<FileChange> => {
-        const paths = entry.oldPath
-          ? [
-              entry.oldPath,
-              entry.path,
-            ]
-          : [
-              entry.path,
-            ];
-        const numstat = await git(repoRoot, [
-          'diff',
-          '--numstat',
-          base,
-          '--',
-          ...paths,
-        ]);
-        const stat = parseNumstat(numstat.stdout);
-        const [oldContents, newContents] = stat.binary
-          ? [
-              '',
-              '',
-            ]
-          : await Promise.all([
-              showContents(repoRoot, base, entry.oldPath ?? entry.path),
-              entry.status === 'deleted' ? Promise.resolve('') : workingFile(repoRoot, entry.path),
-            ]);
-        return {
-          path: entry.path,
-          oldPath: entry.oldPath,
-          status: entry.status,
-          oldContents,
-          newContents,
-          additions: stat.additions,
-          deletions: stat.deletions,
-          binary: stat.binary,
-          staged: false,
-          untracked: false,
-        };
-      }),
-    ),
-    Promise.all(untrackedPaths.map((p) => untrackedChange(repoRoot, p))),
+    Promise.all(entries.map((entry) => refChange(repoRoot, base, null, entry, ignoreWhitespace))),
+    Promise.all(untrackedPaths.map((p) => untrackedChange(repoRoot, p, ignoreWhitespace))),
   ]);
   return [
     ...tracked,
@@ -655,23 +735,27 @@ async function workingRangeChanges(repoRoot: string, base: string): Promise<File
   ];
 }
 
-export async function getReview(cwd: string, compare: CompareSpec): Promise<ReviewModel> {
+export async function getReview(
+  cwd: string,
+  compare: CompareSpec,
+  ignoreWhitespace: boolean,
+): Promise<ReviewModel> {
   const repoRoot = await getRepoRoot(cwd);
   if (!repoRoot) {
     throw new Error(`Not a git repository: ${cwd}`);
   }
   if (compare.kind === 'working') {
-    return getWorkingReview(repoRoot);
+    return getWorkingReview(repoRoot, ignoreWhitespace);
   }
 
   // Ref comparisons have no index, so everything is "unreviewed".
   let files: FileChange[];
   if (compare.kind === 'commit') {
-    files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.ref), compare.ref);
+    files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.ref), compare.ref, ignoreWhitespace);
   } else if (compare.head === null) {
-    files = await workingRangeChanges(repoRoot, compare.base);
+    files = await workingRangeChanges(repoRoot, compare.base, ignoreWhitespace);
   } else {
-    files = await refFileChanges(repoRoot, compare.base, compare.head);
+    files = await refFileChanges(repoRoot, compare.base, compare.head, ignoreWhitespace);
   }
   return {
     repoRoot,

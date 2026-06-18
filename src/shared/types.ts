@@ -28,11 +28,18 @@ export interface FileChange {
   /** Previous path, present only for renames. */
   oldPath?: string;
   status: FileStatus;
-  /** Old/new full file contents, fed to <MultiFileDiff/> (enables context
-   * expansion). Empty string means the file is absent on that side — or that
-   * the file is binary, in which case contents are omitted (see `binary`). */
+  /** Old/new full file contents, fed to the diff viewer (enables context
+   * expansion and supplies the line text). Empty string means the file is
+   * absent on that side — or that the file is binary, in which case contents
+   * are omitted (see `binary`). */
   oldContents: string;
   newContents: string;
+  /** git's own unified diff for this file (hunks only, default context). The
+   * client parses it with `processFile`, supplying the contents above — git
+   * computes the diff in C, replacing the client-side Myers diff that blew up
+   * superlinearly with edit distance and froze the UI on large/heavily-changed
+   * files. Empty for binary files (see `binary`). */
+  patch: string;
   additions: number;
   deletions: number;
   /** True when git reports the file as binary. Contents are not read or sent;

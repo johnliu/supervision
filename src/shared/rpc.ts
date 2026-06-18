@@ -38,6 +38,9 @@ export type SupervisionRPC = {
       getReview: {
         params: {
           compare: CompareSpec;
+          /** Diff with `--ignore-all-space` (the diff is computed by git now,
+           * so this is a server-side flag — toggling it refetches). */
+          ignoreWhitespace: boolean;
         };
         response: ReviewModel;
       };
@@ -99,12 +102,14 @@ export type SupervisionRPC = {
       stage: {
         params: {
           paths: string[];
+          ignoreWhitespace: boolean;
         };
         response: ReviewModel;
       }; // approve
       unstage: {
         params: {
           paths: string[];
+          ignoreWhitespace: boolean;
         };
         response: ReviewModel;
       };

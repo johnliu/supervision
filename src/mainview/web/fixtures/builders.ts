@@ -3,6 +3,7 @@
 // are exactly the diffs the e2e fixtures render — they cannot drift.
 
 import { parseDiffFromFile } from '@pierre/diffs';
+import { createTwoFilesPatch } from 'diff';
 import type { FileChange, FileStatus } from '../../../shared/types';
 
 /** `count` numbered lines: "<prefix> N: <filler>". 1-based numbering. */
@@ -78,6 +79,22 @@ function countChanges(
   };
 }
 
+/**
+ * A git-style unified diff for the fixture, matching what the bun layer ships
+ * from real git. `processFile` parses this (with the contents) the same way the
+ * app does, so the demo/e2e exercise the real render path. Empty when there's
+ * no textual change (binary, or identical sides).
+ */
+function makePatch(path: string, oldPath: string, oldContents: string, newContents: string): string {
+  if (oldContents === newContents) {
+    return '';
+  }
+  const body = createTwoFilesPatch(`a/${oldPath}`, `b/${path}`, oldContents, newContents, undefined, undefined, {
+    context: 3,
+  });
+  return `diff --git a/${oldPath} b/${path}\n${body}`;
+}
+
 export interface MakeFileChangeOptions {
   path: string;
   oldLines: string[];
@@ -108,6 +125,7 @@ export function makeFileChange(opts: MakeFileChangeOptions): FileChange {
     status: opts.status ?? 'modified',
     oldContents,
     newContents,
+    patch: opts.binary ? '' : makePatch(opts.path, opts.oldPath ?? opts.path, oldContents, newContents),
     additions: counts.additions,
     deletions: counts.deletions,
     binary: opts.binary ?? false,
