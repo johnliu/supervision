@@ -1,7 +1,18 @@
 {
   "name": "supervision",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Native code-review companion for LLM-driven development",
+  "author": "John Liu <johnyuhanliu@gmail.com>",
+  "license": "UNLICENSED",
+  "private": true,
+  "homepage": "https://github.com/johnliu/supervision",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/johnliu/supervision.git"
+  },
+  "bugs": {
+    "url": "https://github.com/johnliu/supervision/issues"
+  },
   "scripts": {
     "start": "vite build && electrobun dev",
     "dev": "electrobun dev --watch",
@@ -10,6 +21,7 @@
     "web": "concurrently \"bun run src/bun/web.ts\" \"vite --open '/web.html?backend=live'\"",
     "hmr": "vite --port 5173",
     "build:canary": "vite build && electrobun build --env=canary",
+    "build:stable": "vite build && electrobun build --env=stable",
     "typecheck": "tsc --noEmit",
     "check": "biome check .",
     "test:unit": "bun test src",

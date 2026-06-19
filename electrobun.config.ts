@@ -4,7 +4,14 @@ export default {
   app: {
     name: 'Supervision',
     identifier: 'supervision.johnliu.me',
-    version: '0.0.1',
+    version: '0.1.0',
+    description: 'Native code-review companion for LLM-driven development',
+  },
+  // Where stable releases live. Electrobun bakes this into the app and the
+  // updater resolves update.json / patches against it. GitHub's
+  // `releases/latest/download` always points at the newest published release.
+  release: {
+    baseUrl: 'https://github.com/johnliu/supervision/releases/latest/download',
   },
   build: {
     // Vite builds to dist/, we copy from there

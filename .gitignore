@@ -4,6 +4,9 @@ dist/
 artifacts/
 *.tsbuildinfo
 
+# Personal Claude Code settings (per-machine, not shared)
+.claude/settings.local.json
+
 # Supervision's own runtime review data (created when reviewing this repo)
 .supervision/
 

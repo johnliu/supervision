@@ -1,24 +1,43 @@
-# Electrobun Project
+# Supervision
 
-This is an Electrobun desktop application.
+A native macOS code-review companion for LLM-driven development. You review the
+working-tree diff and leave comments anchored to specific lines; a coding agent
+reads those comments and applies them. Comments live in
+`.supervision/comments.json` at the repo root.
 
-IMPORTANT: Electrobun is NOT Electron. Do not use Electron APIs or patterns.
+## Architecture
 
-## Documentation
+- Desktop app built on Electrobun (NOT Electron — do not use Electron APIs).
+  Uses the system WebView, no bundled Chromium.
+- `src/bun/` — main process (Bun): git, file watcher, RPC bridge, comment
+  store, app menu, config. HMR does NOT reload this process; restart `dev`
+  after editing.
+- `src/mainview/` — React UI (diff pane, comments panel, toolbar, settings).
+  `src/mainview/web/` is web mode: the full app against an in-memory backend for
+  tests, no Electrobun. Nothing under `web/` ships in the packaged app.
+- `src/shared/` — types shared across the process boundary.
+- `skills/supervision/SKILL.md` — the `/supervision` agent skill that applies
+  review comments.
 
-Full API reference: https://blackboard.sh/electrobun/llms.txt
-Getting started: https://blackboard.sh/electrobun/docs/
+## Conventions
 
-## Quick Reference
+- Run shell commands through devbox: `devbox run -- bun run <script>`.
+- `docs/specs/` is the source of truth for UI behavior. Every bug fix starts
+  with a failing spec-tagged test (`AREA-N` id in the test title); see
+  `docs/specs/README.md`. `scripts/check-spec-coverage.ts` enforces coverage.
+- Full gate: `devbox run -- bun run test` (typecheck + unit + spec coverage +
+  e2e). Format/lint with Biome: `devbox run -- bun run check`.
 
-Import patterns:
-- Main process (Bun): `import { BrowserWindow } from "electrobun/bun"`
-- Browser context: `import { Electroview } from "electrobun/view"`
+## The comment contract
 
-Use `views://` URLs to load bundled assets (e.g., `url: "views://mainview/index.html"`).
-Views must be configured in `electrobun.config.ts` to be built and copied into the bundle.
+`.supervision/comments.json` holds review comments anchored to a file + line,
+each with a reply thread. The `/supervision` skill reads open comments, makes
+the change, and replies inline in the JSON. See `skills/supervision/SKILL.md`
+for the full schema and workflow.
 
-## About
+## Electrobun reference
 
-Electrobun is built by Blackboard (https://blackboard.sh), an innovation lab building
-tools and funding teams that define the next generation of technology.
+- API reference: https://blackboard.sh/electrobun/llms.txt
+- Docs: https://blackboard.sh/electrobun/docs/
+- Imports: main process `electrobun/bun`, browser context `electrobun/view`.
+- Bundled assets load via `views://` URLs, configured in `electrobun.config.ts`.
