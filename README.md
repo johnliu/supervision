@@ -30,7 +30,8 @@ xattr -dr com.apple.quarantine /Applications/Supervision.app
 
 The first command may print a tap-trust notice the first time you install from
 this tap — it's advisory and the install still proceeds. Upgrade later with
-`brew upgrade --cask supervision`.
+`brew upgrade --cask supervision`. This also puts the [`supervision` CLI](#usage)
+on your PATH.
 
 ### Direct download
 
@@ -53,16 +54,19 @@ terminal:
 supervision [dir]    # default: current directory
 ```
 
-To get the `supervision` CLI on your PATH, symlink [`bin/supervision`](bin/supervision):
+Homebrew installs this CLI for you. If you grabbed the `.dmg` directly, or you
+want it from a source checkout, symlink the wrapper onto your PATH yourself:
 
 ```bash
+# direct .dmg install (the wrapper ships inside the bundle):
+ln -s /Applications/Supervision.app/Contents/Resources/app/supervision /usr/local/bin/supervision
+# …or from a source checkout:
 ln -s "$PWD/bin/supervision" /usr/local/bin/supervision
-supervision ~/some/repo
 ```
 
-It finds an installed `Supervision.app` (or this repo's dev build;
-`SUPERVISION_APP` overrides) and passes the directory through both argv and
-`SUPERVISION_REPO`.
+It finds the `Supervision.app` it lives in (or an installed app / this repo's
+dev build; `SUPERVISION_APP` overrides) and passes the directory through both
+argv and `SUPERVISION_REPO`.
 
 ### The review loop
 

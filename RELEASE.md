@@ -105,6 +105,7 @@ Verify:
 brew update
 brew upgrade --cask johnliu/supervision/supervision   # or `install` if first time
 xattr -dr com.apple.quarantine /Applications/Supervision.app
+command -v supervision    # the cask symlinks the bundled CLI onto PATH
 ```
 
 ## Homebrew tap

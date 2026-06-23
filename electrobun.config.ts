@@ -18,6 +18,10 @@ export default {
     copy: {
       'dist/index.html': 'views/mainview/index.html',
       'dist/assets': 'views/mainview/assets',
+      // Ship the CLI wrapper inside the bundle (→ Contents/Resources/app/supervision)
+      // so the Homebrew cask can symlink it onto PATH (see Casks/supervision.rb
+      // `binary`). cpSync preserves the script's executable bit.
+      'bin/supervision': 'supervision',
     },
     // Ignore Vite output in watch mode — HMR handles view rebuilds separately
     watchIgnore: [

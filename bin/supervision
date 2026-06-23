@@ -3,8 +3,15 @@
 #
 # Execs the bundle's launcher directly rather than `open -a` so both the
 # directory argument and SUPERVISION_REPO reach the Bun process (open(1)
-# strips the environment and arguments). SUPERVISION_APP overrides bundle
-# discovery; otherwise installed apps win over this repo's dev builds.
+# strips the environment and arguments).
+#
+# Bundle discovery, highest priority first:
+#   1. $SUPERVISION_APP — explicit override.
+#   2. The bundle this script ships inside. The Homebrew cask installs the CLI
+#      as a symlink to Supervision.app/Contents/Resources/app/supervision, so
+#      the installed CLI always launches its own app, wherever brew put it.
+#   3. An installed app in ~/Applications or /Applications, else a dev build
+#      under this repo's build/ (running ./bin/supervision from a checkout).
 set -euo pipefail
 
 dir="${1:-$PWD}"
@@ -14,13 +21,31 @@ if [[ ! -d "$dir" ]]; then
 fi
 dir="$(cd "$dir" && pwd)"
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve this script's real path, following symlinks (macOS has no
+# `readlink -f`), so a symlinked CLI can locate the bundle it lives in.
+self="${BASH_SOURCE[0]}"
+while [[ -L "$self" ]]; do
+  link="$(readlink "$self")"
+  if [[ "$link" == /* ]]; then
+    self="$link"
+  else
+    self="$(cd "$(dirname "$self")" && pwd)/$link"
+  fi
+done
+self_dir="$(cd "$(dirname "$self")" && pwd)"
+
+# When bundled, this script sits at <app>/Contents/Resources/app/supervision.
+bundled_app=""
+if [[ "$self_dir" == */Contents/Resources/app ]]; then
+  bundled_app="${self_dir%/Contents/Resources/app}"
+fi
 
 candidates=(
   "${SUPERVISION_APP:-}"
+  "$bundled_app"
   "$HOME/Applications/Supervision.app"
   "/Applications/Supervision.app"
-  "$repo_root"/build/*/Supervision*.app
+  "$self_dir/.."/build/*/Supervision*.app
 )
 
 app=""
