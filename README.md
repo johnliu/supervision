@@ -15,18 +15,22 @@ Built on [Electrobun](https://electrobun.dev) — a single small native app
 
 ## Install
 
-> Supervision is unsigned (no paid Apple Developer certificate). The app is
-> ad-hoc signed so it runs on Apple Silicon, but macOS Gatekeeper still
-> quarantines anything downloaded from the internet. Homebrew is the smoothest
-> path because it can strip the quarantine flag for you.
+> Supervision is unsigned (no paid Apple Developer certificate) and Apple
+> Silicon (`arm64`) only. The app is ad-hoc signed so it runs, but macOS
+> Gatekeeper quarantines unsigned apps downloaded from the internet — so there's
+> a **one-time** step to clear that flag after installing, whichever method you
+> use.
 
-### Homebrew (recommended)
+### Homebrew
 
 ```bash
-brew install --cask --no-quarantine johnliu/supervision/supervision
+brew install --cask johnliu/supervision/supervision
+xattr -dr com.apple.quarantine /Applications/Supervision.app
 ```
 
-`--no-quarantine` lets the unsigned app launch without the Gatekeeper prompt.
+The first command may print a tap-trust notice the first time you install from
+this tap — it's advisory and the install still proceeds. Upgrade later with
+`brew upgrade --cask supervision`.
 
 ### Direct download
 
@@ -39,8 +43,6 @@ xattr -dr com.apple.quarantine /Applications/Supervision.app
 
 (Or launch it once, then approve it under System Settings → Privacy &
 Security → "Open Anyway".)
-
-> Releases are macOS Apple Silicon (`arm64`) only for now.
 
 ## Usage
 

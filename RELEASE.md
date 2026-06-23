@@ -44,8 +44,10 @@ files to `artifacts/`:
 > `electrobun.config.ts` because there's no paid Apple Developer certificate.
 > Electrobun still ad-hoc signs the binary, which is enough to run on Apple
 > Silicon but **not** enough to clear Gatekeeper on a downloaded app. That's
-> why the install instructions use `--no-quarantine` / `xattr`. If you ever get
-> a Developer ID cert, flip `mac: { codesign: true, notarize: true }` and add
+> why the install instructions have users clear the quarantine flag with
+> `xattr` after installing (Homebrew dropped `--no-quarantine`, so it no longer
+> does this for you). If you ever get a Developer ID cert, flip
+> `mac: { codesign: true, notarize: true }` and add
 > the credential env vars Electrobun expects — then the workarounds go away.
 
 Smoke-test the build before publishing:
@@ -92,7 +94,8 @@ Verify:
 
 ```bash
 brew update
-brew install --cask --no-quarantine johnliu/supervision/supervision
+brew upgrade --cask johnliu/supervision/supervision   # or `install` if first time
+xattr -dr com.apple.quarantine /Applications/Supervision.app
 ```
 
 ## Homebrew tap
@@ -102,8 +105,12 @@ needs no review is a personal tap: a repo named `homebrew-supervision` under
 your account, containing `Casks/supervision.rb`. Users then install with:
 
 ```bash
-brew install --cask --no-quarantine johnliu/supervision/supervision
+brew install --cask johnliu/supervision/supervision
+xattr -dr com.apple.quarantine /Applications/Supervision.app
 ```
+
+(Homebrew removed `--no-quarantine`, so the unsigned app needs its quarantine
+flag cleared once after install — same step as the direct `.dmg` download.)
 
 (`johnliu/supervision` resolves to the `johnliu/homebrew-supervision` repo;
 the trailing `supervision` is the cask name.)

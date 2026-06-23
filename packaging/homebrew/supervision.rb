@@ -4,7 +4,11 @@
 # at `Casks/supervision.rb`, and bump `version` + `sha256` on every release
 # (see RELEASE.md). Install with:
 #
-#   brew install --cask --no-quarantine johnliu/supervision/supervision
+#   brew install --cask johnliu/supervision/supervision
+#   xattr -dr com.apple.quarantine /Applications/Supervision.app
+#
+# (Homebrew no longer supports --no-quarantine, so the unsigned app needs the
+# quarantine flag cleared once after install.)
 #
 cask "supervision" do
   version "0.1.0"
@@ -15,7 +19,7 @@ cask "supervision" do
   desc "Native code-review companion for LLM-driven development"
   homepage "https://github.com/johnliu/supervision"
 
-  # Apple Silicon only, and unsigned — installs cleanly with --no-quarantine.
+  # Apple Silicon only, and unsigned — clear quarantine after install (README).
   depends_on arch: :arm64
 
   app "Supervision.app"
