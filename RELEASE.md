@@ -34,6 +34,15 @@ devbox run -- bun run build:stable
 This runs `vite build` then `electrobun build --env=stable` and writes three
 files to `artifacts/`:
 
+> **Why the script prepends `/usr/bin` to `PATH` for the Electrobun step.**
+> Electrobun packages the app by shelling out to `tar`, and its self-extractor
+> can only read **bsdtar** (PAX) archives — it chokes on GNU tar's `@LongLink`
+> entries (emitted for paths >100 chars, e.g. the bundled Inter `.woff2` fonts)
+> with `error: TarUnsupportedFileType`, and the installed app quits on launch.
+> Inside `devbox`, `tar` is **GNU tar** (from nix), so `build:stable` forces
+> macOS's `/usr/bin/tar` (bsdtar) ahead of it. Do not remove this, or release
+> builds will silently fail to launch.
+
 | File | What it is |
 | --- | --- |
 | `stable-macos-arm64-Supervision.dmg` | the drag-to-Applications installer (what users download) |

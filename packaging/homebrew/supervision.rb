@@ -12,7 +12,7 @@
 #
 cask "supervision" do
   version "0.1.0"
-  sha256 "REPLACE_WITH_SHA256_OF_DMG" # shasum -a 256 stable-macos-arm64-Supervision.dmg
+  sha256 "68a87b2492a26bcfdbea9ff99ec9e7673f70c014b2e0436c0d78aa1b39260163" # shasum -a 256 stable-macos-arm64-Supervision.dmg
 
   url "https://github.com/johnliu/supervision/releases/download/v#{version}/stable-macos-arm64-Supervision.dmg"
   name "Supervision"
