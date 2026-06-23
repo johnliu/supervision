@@ -3,8 +3,9 @@
 // `bun run web` together with the Vite dev server; the browser app at
 // /web.html?backend=live then reviews a real repo.
 //
-// Repo selection matches the desktop app: SUPERVISION_REPO env override,
-// else the launch cwd's git root.
+// Repo selection matches the desktop app (see launchTarget.ts): an explicit
+// directory arg / SUPERVISION_REPO, else the launch cwd when it's a repo, else
+// the most recently opened project, else none.
 
 import { getRepoRoot } from './git';
 import { createSupervisionHandlers } from './handlers';
@@ -43,9 +44,10 @@ const bridge = startWebBridge({
   handlers,
 });
 
-const initialRoot = await getRepoRoot(getCurrentRepo());
+const initialRepo = await getCurrentRepo();
+const initialRoot = initialRepo ? await getRepoRoot(initialRepo) : null;
 rewatch(initialRoot);
 
 console.log(`Supervision web bridge: ws://localhost:${PORT}/socket`);
-console.log(`Reviewing: ${initialRoot ?? `${getCurrentRepo()} (not a git repo)`}`);
+console.log(`Reviewing: ${initialRoot ?? `${initialRepo ?? '(no project)'} (not a git repo)`}`);
 console.log('Open the app: /web.html?backend=live (vite dev server)');

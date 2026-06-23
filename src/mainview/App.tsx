@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { diffThemePair } from '../shared/config';
 import { CommitDetailsPane, RangeDetailsPane } from './components/CommitDetailsPane';
 import { DiffPane } from './components/DiffPane';
+import { NoProject } from './components/NoProject';
 import { OnboardingDialog } from './components/OnboardingDialog';
 import { QuickOpen } from './components/QuickOpen';
 import { RepoErrorDialog } from './components/RepoErrorDialog';
@@ -22,6 +23,7 @@ export default function App() {
   const hydrateConfig = useReviewStore((state) => state.hydrateConfig);
   const loadRecentProjects = useReviewStore((state) => state.loadRecentProjects);
   const error = useReviewStore((state) => state.error);
+  const repoOpen = useReviewStore((state) => state.repoOpen);
   const theme = useReviewStore((state) => state.theme);
   // Ref comparison with no file picked: show its details overview ('commit'
   // → the commit page, 'range' → the compare view); null means the diff.
@@ -133,7 +135,9 @@ export default function App() {
               id="search-scope"
               className="min-h-0 flex-1"
             >
-              {overview === 'commit' ? (
+              {!repoOpen ? (
+                <NoProject />
+              ) : overview === 'commit' ? (
                 <CommitDetailsPane />
               ) : overview === 'range' ? (
                 <RangeDetailsPane />

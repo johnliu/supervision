@@ -3,18 +3,20 @@
 // clipboard) are wired here — the web bridge transport runs the same handlers
 // without them.
 
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { BrowserView, Utils } from 'electrobun/bun';
 import type { SupervisionRPC } from '../shared/rpc';
 import { createSupervisionHandlers, type SupervisionHandlersOptions } from './handlers';
 
-let activeGetCurrentRepo: (() => string) | null = null;
+let activeGetCurrentRepo: (() => Promise<string | null>) | null = null;
 
-export function getCurrentRepo(): string {
+/** The repo under review, or null when no project is open. Async because the
+ * handlers resolve it lazily (recents read + git probe) on first access. */
+export async function getCurrentRepo(): Promise<string | null> {
   if (!activeGetCurrentRepo) {
-    // Before createSupervisionRPC runs, fall back to the same default the
-    // handlers use.
-    return process.env.SUPERVISION_REPO ?? process.cwd();
+    // Before createSupervisionRPC runs, fall back to the explicit override only.
+    return process.env.SUPERVISION_REPO ?? null;
   }
   return activeGetCurrentRepo();
 }
@@ -30,8 +32,10 @@ export function createSupervisionRPC(options: SupervisionRpcOptions = {}) {
     native: {
       clipboardWriteText: (text) => Utils.clipboardWriteText(text),
       openFolderDialog: async (startingFolder) => {
+        // Open beside the current repo (so a sibling is one click away); with
+        // no project open, start at home.
         const picked = await Utils.openFileDialog({
-          startingFolder: path.dirname(startingFolder),
+          startingFolder: startingFolder ? path.dirname(startingFolder) : homedir(),
           canChooseFiles: false,
           canChooseDirectory: true,
           allowsMultipleSelection: false,

@@ -62,6 +62,9 @@ interface ReviewState {
   error: string | null;
   /** Failed project open (not a git repository) — shown as a modal. */
   repoError: string | null;
+  /** Whether a project is open. False (a bare launch with no repo and no usable
+   * recent) shows the "no project" empty state instead of an empty review. */
+  repoOpen: boolean;
   model: ReviewModel | null;
   comments: Comment[];
   compare: CompareSpec;
@@ -328,6 +331,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     loading: false,
     error: null,
     repoError: null,
+    // Assume a project is open until the first review resolves, so a normal
+    // launch never flashes the empty state.
+    repoOpen: true,
     model: null,
     comments: [],
     compare: {
@@ -399,6 +405,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         ]);
         set({
           model,
+          // Bun signals "no project open" with an empty repoRoot (see
+          // handlers.getReview); any real repo carries its root.
+          repoOpen: model.repoRoot !== '',
           comments,
           commitDetails,
           rangeCommits,
@@ -423,8 +432,11 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         });
       }
       try {
+        const info = await api.getRepoInfo();
+        // No project open (empty root): null keeps the footer's worktree/branch
+        // chips hidden rather than showing a stray "main".
         set({
-          repoInfo: await api.getRepoInfo(),
+          repoInfo: info.root === '' ? null : info,
         });
       } catch {
         set({

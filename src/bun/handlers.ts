@@ -6,12 +6,12 @@
 // without them degrade gracefully.
 
 import type { SupervisionRPC } from '../shared/rpc';
-import type { SetRepoResult } from '../shared/types';
+import type { ReviewModel, SetRepoResult } from '../shared/types';
 import * as comments from './comments';
 import * as config from './config';
 import * as editor from './editor';
 import * as git from './git';
-import { resolveLaunchRepo } from './launchTarget';
+import { resolveInitialRepo } from './launchTarget';
 import * as recent from './recent';
 import * as skill from './skill';
 
@@ -37,15 +37,54 @@ export interface SupervisionHandlersOptions {
 
 export interface SupervisionHandlers {
   handlers: SupervisionRequestHandlers;
-  getCurrentRepo(): string;
+  /** The launch/selected repo once initial resolution has settled (null = no
+   * project open). Async because resolution reads recents and probes git. */
+  getCurrentRepo(): Promise<string | null>;
+}
+
+/** An empty working-tree review — the response shape for "no project open". */
+function emptyReview(): ReviewModel {
+  return {
+    repoRoot: '',
+    compare: {
+      kind: 'working',
+    },
+    reviewed: [],
+    unreviewed: [],
+  };
 }
 
 export function createSupervisionHandlers(options: SupervisionHandlersOptions = {}): SupervisionHandlers {
-  /** The repo under review: CLI directory arg, else env override, else cwd. */
-  let currentRepo = resolveLaunchRepo();
+  /**
+   * The repo under review, or null when no project is open (a bare launch with
+   * no git repo at the cwd and no usable recent). Resolved once on startup —
+   * the resolution reads recents and probes git, both async — and memoized via
+   * `ready`; every handler reads the repo through `current()` so none races
+   * ahead of that resolution.
+   */
+  let currentRepo: string | null = null;
+  const ready: Promise<void> = (async () => {
+    currentRepo = await resolveInitialRepo({
+      isRepo: async (dir) => (await git.getRepoRoot(dir)) !== null,
+      readRecents: recent.readRecentProjects,
+    });
+  })();
 
-  /** Resolve the git root (comments live there), falling back to currentRepo. */
-  const repoRoot = async (): Promise<string> => (await git.getRepoRoot(currentRepo)) ?? currentRepo;
+  /** The current repo once initial resolution has settled (null = no project). */
+  const current = async (): Promise<string | null> => {
+    await ready;
+    return currentRepo;
+  };
+
+  /** Resolve the git root (comments live there) for the current repo, or null
+   * when no project is open. */
+  const repoRoot = async (): Promise<string | null> => {
+    const repo = await current();
+    if (!repo) {
+      return null;
+    }
+    return (await git.getRepoRoot(repo)) ?? repo;
+  };
 
   // Point the app at `target`'s git root: update currentRepo, record its
   // PROJECT (the main checkout — recents are per-project, never per-worktree)
@@ -74,26 +113,63 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
 
   const handlers: SupervisionRequestHandlers = {
     getRepoRoot: async () => {
-      const root = await git.getRepoRoot(currentRepo);
+      const repo = await current();
+      if (!repo) {
+        return {
+          root: '',
+          isRepo: false,
+        };
+      }
+      const root = await git.getRepoRoot(repo);
       if (root) {
         currentRepo = root;
       }
       return {
-        root: root ?? currentRepo,
+        root: root ?? repo,
         isRepo: root !== null,
       };
     },
-    getReview: async ({ compare, ignoreWhitespace }) => git.getReview(currentRepo, compare, ignoreWhitespace),
-    getRepoInfo: async () => git.getRepoInfo(currentRepo),
-    getLog: async () => git.getLog(currentRepo),
-    getCommit: async ({ ref }) => git.getCommitDetails(currentRepo, ref),
-    getRangeLog: async ({ base, head }) => git.getRangeLog(currentRepo, base, head),
-    readFile: async ({ path: relPath, ref }) => git.readFileBase64(currentRepo, relPath, ref),
+    getReview: async ({ compare, ignoreWhitespace }) => {
+      const repo = await current();
+      // No project open: an empty review rather than the not-a-git-repo throw,
+      // which would surface as an error banner. repoRoot '' is the signal the
+      // webview renders its "no project" empty state from.
+      return repo
+        ? git.getReview(repo, compare, ignoreWhitespace)
+        : {
+            ...emptyReview(),
+            compare,
+          };
+    },
+    getLog: async () => {
+      const repo = await current();
+      return repo ? git.getLog(repo) : [];
+    },
+    getCommit: async ({ ref }) => {
+      const repo = await current();
+      return repo ? git.getCommitDetails(repo, ref) : null;
+    },
+    getRangeLog: async ({ base, head }) => {
+      const repo = await current();
+      return repo ? git.getRangeLog(repo, base, head) : [];
+    },
+    readFile: async ({ path: relPath, ref }) => {
+      const repo = await current();
+      return repo
+        ? git.readFileBase64(repo, relPath, ref)
+        : {
+            ok: false,
+            error: 'No project open',
+          };
+    },
     stage: async ({ paths, ignoreWhitespace }) => {
       // git resolves the repo-relative paths against cwd, so stage/unstage
       // must run at the git root — not a subdir currentRepo (the reason the
       // dev app used to need SUPERVISION_REPO).
       const root = await repoRoot();
+      if (!root) {
+        return emptyReview();
+      }
       await git.stage(root, paths);
       return git.getReview(
         root,
@@ -105,6 +181,9 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
     },
     unstage: async ({ paths, ignoreWhitespace }) => {
       const root = await repoRoot();
+      if (!root) {
+        return emptyReview();
+      }
       await git.unstage(root, paths);
       return git.getReview(
         root,
@@ -114,14 +193,38 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
         ignoreWhitespace,
       );
     },
-    getComments: async () => comments.readComments(await repoRoot()),
-    saveComment: async (input) => comments.addComment(await repoRoot(), input),
-    resolveComment: async ({ id }) => comments.resolveComment(await repoRoot(), id),
-    replyToComment: async ({ id, body }) => comments.replyToComment(await repoRoot(), id, body),
-    deleteComment: async ({ id }) => comments.deleteComment(await repoRoot(), id),
-    clearComments: async ({ status }) => comments.clearComments(await repoRoot(), status),
+    getComments: async () => {
+      const root = await repoRoot();
+      return root ? comments.readComments(root) : [];
+    },
+    saveComment: async (input) => {
+      const root = await repoRoot();
+      return root ? comments.addComment(root, input) : [];
+    },
+    resolveComment: async ({ id }) => {
+      const root = await repoRoot();
+      return root ? comments.resolveComment(root, id) : [];
+    },
+    replyToComment: async ({ id, body }) => {
+      const root = await repoRoot();
+      return root ? comments.replyToComment(root, id, body) : [];
+    },
+    deleteComment: async ({ id }) => {
+      const root = await repoRoot();
+      return root ? comments.deleteComment(root, id) : [];
+    },
+    clearComments: async ({ status }) => {
+      const root = await repoRoot();
+      return root ? comments.clearComments(root, status) : [];
+    },
     exportMarkdown: async () => {
-      const result = await comments.exportMarkdown(await repoRoot());
+      const root = await repoRoot();
+      const result = root
+        ? await comments.exportMarkdown(root)
+        : {
+            markdown: '',
+            path: '',
+          };
       // Copy on the host side when the transport has a clipboard —
       // navigator.clipboard is unreliable in the Electrobun webview.
       try {
@@ -133,7 +236,7 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
     },
     // Config is user-level; the repo root is only passed so a legacy
     // per-repo config can seed the user file on first read.
-    getConfig: async () => config.readConfig(await repoRoot()),
+    getConfig: async () => config.readConfig((await repoRoot()) ?? undefined),
     saveConfig: async (input) => config.writeConfig(input),
     setRepo: async ({ path: target }) => switchRepo(target),
     openProject: async () => {
@@ -143,7 +246,9 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
           cancelled: true,
         };
       }
-      const chosen = await options.native.openFolderDialog(currentRepo);
+      // Start the picker at the current repo; '' lets the native layer fall
+      // back to a sensible default (home) when no project is open.
+      const chosen = await options.native.openFolderDialog((await current()) ?? '');
       if (!chosen) {
         return {
           ok: false,
@@ -173,19 +278,50 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
       }
       return projects;
     },
-    getWorktrees: async () => git.listWorktrees(currentRepo),
-    getBranches: async () => git.listBranches(currentRepo),
-    switchBranch: async ({ name }) => git.switchBranch(currentRepo, name),
+    getRepoInfo: async () => {
+      const repo = await current();
+      return repo
+        ? git.getRepoInfo(repo)
+        : {
+            root: '',
+            projectRoot: '',
+            branch: null,
+            worktree: null,
+          };
+    },
+    getWorktrees: async () => {
+      const repo = await current();
+      return repo ? git.listWorktrees(repo) : [];
+    },
+    getBranches: async () => {
+      const repo = await current();
+      return repo ? git.listBranches(repo) : [];
+    },
+    switchBranch: async ({ name }) => {
+      const repo = await current();
+      return repo
+        ? git.switchBranch(repo, name)
+        : {
+            ok: false,
+            error: 'No project open',
+          };
+    },
     getSkillStatus: async () => skill.getSkillStatus(),
     installSkill: async () => skill.installSkill(),
     openInEditor: async ({ path: relPath, line }) => {
       const root = await repoRoot();
+      if (!root) {
+        return {
+          ok: false,
+          error: 'No project open',
+        };
+      }
       return editor.openInEditor(root, relPath, line, (await config.readConfig(root)).editor);
     },
   };
 
   return {
     handlers,
-    getCurrentRepo: () => currentRepo,
+    getCurrentRepo: () => current(),
   };
 }

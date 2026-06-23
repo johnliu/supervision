@@ -4,6 +4,7 @@ import { type ApplicationMenuHandle, setupApplicationMenu } from './menu';
 import { addRecentProject } from './recent';
 import { createSupervisionRPC, getCurrentRepo } from './rpc';
 import { type WatchHandle, watchWorkingTree } from './watcher';
+import { readWindowState, writeWindowState } from './windowState';
 
 // Overridable so parallel worktree sessions don't attach to each other's
 // Vite server (first one up owns 5173; others would load the wrong frontend).
@@ -64,17 +65,25 @@ const rpc = createSupervisionRPC({
   },
 });
 
-// Title/position are overridable for the same reason as the HMR port: with
-// parallel worktree sessions, identically titled windows stacked at the same
-// coordinates are impossible to tell apart (or click) reliably.
+// Window geometry persists across launches (~/.supervision/window.json) so the
+// app reopens where the user left it. EXCEPTION: a parallel worktree session
+// pins title/position via SUPERVISION_FRAME_* (identically titled windows
+// stacked at the same coordinates are impossible to tell apart) — those are
+// ephemeral, so they neither restore nor overwrite the main window's saved
+// geometry.
+const envFrameX = process.env.SUPERVISION_FRAME_X;
+const envFrameY = process.env.SUPERVISION_FRAME_Y;
+const pinnedFrame = envFrameX != null || envFrameY != null;
+const savedWindow = pinnedFrame ? null : await readWindowState();
+
 const mainWindow = new BrowserWindow({
   title: process.env.SUPERVISION_TITLE ?? 'Supervision',
   url,
   frame: {
-    width: 1400,
-    height: 900,
-    x: Number(process.env.SUPERVISION_FRAME_X ?? 100),
-    y: Number(process.env.SUPERVISION_FRAME_Y ?? 100),
+    width: savedWindow?.width ?? 1400,
+    height: savedWindow?.height ?? 900,
+    x: savedWindow?.x ?? Number(envFrameX ?? 100),
+    y: savedWindow?.y ?? Number(envFrameY ?? 100),
   },
   // Modern macOS chrome: transparent titlebar, traffic lights inset over the
   // content (the sidebar leaves room for them via .platform-desktop padding).
@@ -91,13 +100,36 @@ const mainWindow = new BrowserWindow({
 
 export { mainWindow, rpc };
 
+// Persist geometry as the user moves/resizes, debounced to the gesture's end
+// (both events fire continuously while dragging). Skipped for pinned parallel
+// sessions so they don't overwrite the main window's saved state.
+if (!pinnedFrame) {
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  const persistWindowState = (): void => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      try {
+        void writeWindowState(mainWindow.getFrame());
+      } catch {
+        // The window may be tearing down (FFI frame read failed) — nothing to save.
+      }
+    }, 400);
+  };
+  mainWindow.on('resize', persistWindowState);
+  mainWindow.on('move', persistWindowState);
+}
+
 // Native menu bar; menu clicks are routed to the webview over `rpc` (except
 // dev tools, which toggles the window's webview inspector directly).
 menu = setupApplicationMenu(rpc, {
   onToggleDevTools: () => mainWindow.webview?.toggleDevTools(),
 });
 
-const initialRoot = await getRepoRoot(getCurrentRepo());
+const initialRepo = await getCurrentRepo();
+const initialRoot = initialRepo ? await getRepoRoot(initialRepo) : null;
 rewatch(initialRoot);
 // Seed the launch repo into the recents list so the switcher can return to it
 // after the user opens a different project.

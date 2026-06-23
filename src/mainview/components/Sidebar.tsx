@@ -236,9 +236,18 @@ const TABS: Array<{
 
 function FilesPanel() {
   const model = useReviewStore((state) => state.model);
+  const repoOpen = useReviewStore((state) => state.repoOpen);
   const working = useReviewStore((state) => state.compare.kind === 'working');
   const empty = model && model.unreviewed.length === 0 && model.reviewed.length === 0;
 
+  if (!repoOpen) {
+    return (
+      <div className="flex flex-col items-center gap-2 px-3 py-8 text-center text-xs text-muted-foreground">
+        <FolderTree className="size-4 opacity-60" />
+        <span>No project open</span>
+      </div>
+    );
+  }
   if (!model) {
     return <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>;
   }
