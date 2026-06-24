@@ -113,6 +113,18 @@ export type SupervisionRPC = {
         };
         response: ReviewModel;
       };
+      /** Mark/unmark files read — a per-file flag separate from staging,
+       * content-addressed and persisted to `.supervision/read.json`. `compare`
+       * is passed (not assumed working) since read works in every mode. */
+      setRead: {
+        params: {
+          paths: string[];
+          read: boolean;
+          compare: CompareSpec;
+          ignoreWhitespace: boolean;
+        };
+        response: ReviewModel;
+      };
       getComments: {
         params: undefined;
         response: Comment[];

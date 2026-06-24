@@ -22,7 +22,7 @@ import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from
 import { cn } from '@/lib/utils';
 import type { FileChange } from '../../shared/types';
 import { NO_DRAG_REGION } from '../lib/dragRegion';
-import { resolveThemeType, useReviewStore } from '../store';
+import { partitionFiles, resolveThemeType, useReviewStore } from '../store';
 import { CommentsPanel } from './CommentsPanel';
 import { HistoryPanel } from './HistoryPanel';
 import { RepoIdentity } from './RepoIdentity';
@@ -238,7 +238,6 @@ function FilesPanel() {
   const model = useReviewStore((state) => state.model);
   const repoOpen = useReviewStore((state) => state.repoOpen);
   const working = useReviewStore((state) => state.compare.kind === 'working');
-  const empty = model && model.unreviewed.length === 0 && model.reviewed.length === 0;
 
   if (!repoOpen) {
     return (
@@ -251,21 +250,37 @@ function FilesPanel() {
   if (!model) {
     return <div className="px-3 py-4 text-sm text-muted-foreground">Loading…</div>;
   }
+  // Three disjoint groups (Staged > Read > Unread); see store.partitionFiles.
+  const { unread, read, staged } = partitionFiles(model);
+  const empty = unread.length === 0 && read.length === 0 && staged.length === 0;
+  // Once anything is read, "Unread" labels the remaining group better than the
+  // staging/ref-mode default; with nothing read, keep the familiar title.
+  const unreadTitle = read.length > 0 ? 'Unread' : working ? 'Unstaged' : 'Changed';
   return (
     <>
-      {model.unreviewed.length > 0 ? (
+      {unread.length > 0 ? (
         <Section
-          key="unreviewed"
-          title={working ? 'Unstaged' : 'Changed'}
-          files={model.unreviewed}
+          key="unread"
+          title={unreadTitle}
+          files={unread}
           defaultOpen
         />
       ) : null}
-      {working && model.reviewed.length > 0 ? (
+      {/* Read shows in every mode — in ref/commit modes it's the only progress
+          bucket (there's no staging there). */}
+      {read.length > 0 ? (
+        <Section
+          key="read"
+          title="Read"
+          files={read}
+          defaultOpen={false}
+        />
+      ) : null}
+      {working && staged.length > 0 ? (
         <Section
           key="reviewed"
           title="Staged"
-          files={model.reviewed}
+          files={staged}
           defaultOpen={false}
         />
       ) : null}

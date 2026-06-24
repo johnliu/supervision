@@ -142,6 +142,23 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
     };
   };
 
+  // Read is an in-memory flag in fixtures: content never changes between calls,
+  // so there's nothing to re-fingerprint — just flip the flag on the matching
+  // unstaged entries (skipping ones with no readable content), like `move`.
+  const markRead = (paths: string[], read: boolean) => {
+    model = {
+      ...model,
+      unreviewed: model.unreviewed.map((file) =>
+        paths.includes(file.path) && !file.binary && file.status !== 'deleted'
+          ? {
+              ...file,
+              read,
+            }
+          : file,
+      ),
+    };
+  };
+
   const api: SupervisionApi = {
     getRepoRoot: async () => {
       await wait();
@@ -256,6 +273,11 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
     unstage: async (params) => {
       await wait();
       move(params?.paths ?? [], false);
+      return clone(model);
+    },
+    setRead: async (params) => {
+      await wait();
+      markRead(params?.paths ?? [], params?.read ?? false);
       return clone(model);
     },
     getComments: async () => {

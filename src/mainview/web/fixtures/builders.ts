@@ -103,6 +103,7 @@ export interface MakeFileChangeOptions {
   oldPath?: string;
   staged?: boolean;
   untracked?: boolean;
+  read?: boolean;
   binary?: boolean;
 }
 
@@ -131,5 +132,6 @@ export function makeFileChange(opts: MakeFileChangeOptions): FileChange {
     binary: opts.binary ?? false,
     staged: opts.staged ?? false,
     untracked: opts.untracked ?? false,
+    read: opts.read ?? false,
   };
 }
