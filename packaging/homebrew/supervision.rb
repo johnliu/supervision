@@ -24,12 +24,12 @@ cask "supervision" do
 
   app "Supervision.app"
 
-  # No `binary` stanza: electrobun's stable build packs the bundle into a
-  # .tar.zst that's only unpacked at first launch, so
-  # Contents/Resources/app/supervision doesn't exist when Homebrew makes the
-  # symlink at install time (it fails with "symlink source ... is not there").
-  # Putting the CLI on PATH needs bin/supervision installed independently of the
-  # bundle — it already self-discovers /Applications/Supervision.app.
+  # The `supervision` CLI ships loose at the dmg root (next to the app), injected
+  # by scripts/bundle-cli-into-dmg.sh. The in-bundle copy can't be used:
+  # electrobun's stable build packs it into a .tar.zst unpacked only at first
+  # launch, so it isn't on disk at install time. The CLI self-discovers
+  # /Applications/Supervision.app, so the loose copy works wherever brew keeps it.
+  binary "supervision"
 
   zap trash: [
     "~/.supervision",

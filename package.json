@@ -1,6 +1,6 @@
 {
   "name": "supervision",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Native code-review companion for LLM-driven development",
   "author": "John Liu <johnyuhanliu@gmail.com>",
   "license": "UNLICENSED",
@@ -21,7 +21,7 @@
     "web": "concurrently \"bun run src/bun/web.ts\" \"vite --open '/web.html?backend=live'\"",
     "hmr": "vite --port 5173",
     "build:canary": "vite build && PATH=\"/usr/bin:$PATH\" electrobun build --env=canary",
-    "build:stable": "vite build && PATH=\"/usr/bin:$PATH\" electrobun build --env=stable",
+    "build:stable": "vite build && PATH=\"/usr/bin:$PATH\" electrobun build --env=stable && bash scripts/bundle-cli-into-dmg.sh",
     "typecheck": "tsc --noEmit",
     "check": "biome check .",
     "test:unit": "bun test src",
