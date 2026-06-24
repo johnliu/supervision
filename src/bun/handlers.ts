@@ -12,6 +12,7 @@ import * as config from './config';
 import * as editor from './editor';
 import * as git from './git';
 import { resolveLaunchRepo } from './launchTarget';
+import * as readState from './readState';
 import * as recent from './recent';
 import * as skill from './skill';
 
@@ -113,6 +114,19 @@ export function createSupervisionHandlers(options: SupervisionHandlersOptions = 
         },
         ignoreWhitespace,
       );
+    },
+    // Read state is content-addressed against the new-side bytes, so marking
+    // needs the current model to fingerprint from; build it first, then refetch
+    // so the response carries the freshly-set flags. Uses the passed `compare`
+    // (read applies in every mode, unlike staging).
+    setRead: async ({ paths, read, compare, ignoreWhitespace }) => {
+      const root = await repoRoot();
+      if (read) {
+        await readState.markRead(root, paths, await git.getReview(root, compare, ignoreWhitespace));
+      } else {
+        await readState.unmarkRead(root, paths);
+      }
+      return git.getReview(root, compare, ignoreWhitespace);
     },
     getComments: async () => comments.readComments(await repoRoot()),
     saveComment: async (input) => comments.addComment(await repoRoot(), input),

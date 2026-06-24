@@ -7,6 +7,8 @@
 import {
   ALargeSmall,
   AlignJustify,
+  BookOpen,
+  BookOpenCheck,
   Check,
   CheckCheck,
   ClipboardCopy,
@@ -186,6 +188,7 @@ export function Toolbar() {
   const refresh = useReviewStore((state) => state.refresh);
   const approve = useReviewStore((state) => state.approve);
   const unapprove = useReviewStore((state) => state.unapprove);
+  const setRead = useReviewStore((state) => state.setRead);
   const exportReview = useReviewStore((state) => state.exportReview);
   const selectedLines = useReviewStore((state) => state.selectedLines);
   const editorChoice = useReviewStore((state) => state.editor);
@@ -281,6 +284,36 @@ export function Toolbar() {
           </ContextMenu.Portal>
         </ContextMenu.Root>
       ) : null}
+
+      {/* Mark read — a lighter pass than approve, available in every mode
+          (ref/commit modes have no staging, so this is their only progress
+          mark). Binary/deleted files have no readable content to fingerprint. */}
+      <Hint
+        label={file?.read ? `Mark ${file.path} unread` : `Mark ${file?.path ?? 'file'} read`}
+        keys={[
+          'm',
+        ]}
+      >
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          className={CELL}
+          aria-label={file?.read ? 'Mark file unread' : 'Mark file read'}
+          disabled={!file || file.binary || file.status === 'deleted'}
+          onClick={() =>
+            file
+              ? setRead(
+                  [
+                    file.path,
+                  ],
+                  !file.read,
+                )
+              : undefined
+          }
+        >
+          {file?.read ? <BookOpenCheck /> : <BookOpen />}
+        </Button>
+      </Hint>
 
       <ContextMenu.Root onOpenChange={trackPopup}>
         <Hint

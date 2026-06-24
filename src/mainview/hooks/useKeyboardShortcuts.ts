@@ -8,6 +8,7 @@
 //   ] / [                         jump to next / previous change (DiffPane)
 //   c                             comment on the current selection
 //   a / u                         approve / unapprove the current file
+//   m                             mark the current file read / unread
 //   r                             refresh
 //   p                             toggle preview (markdown)
 //   \                             toggle split / unified
@@ -76,6 +77,24 @@ export function useKeyboardShortcuts(): void {
             ]);
           }
           break;
+        // Mark read works in every mode (no `working` gate). Prefer the
+        // unstaged entry — the side setRead fingerprints — and skip files with
+        // no readable content (binary, deleted).
+        case 'm': {
+          const target =
+            state.model?.unreviewed.find((file) => file.path === state.selectedPath) ??
+            state.model?.reviewed.find((file) => file.path === state.selectedPath);
+          if (target && !target.binary && target.status !== 'deleted') {
+            event.preventDefault();
+            void state.setRead(
+              [
+                target.path,
+              ],
+              !target.read,
+            );
+          }
+          break;
+        }
         case 'r':
           event.preventDefault();
           void state.refresh();

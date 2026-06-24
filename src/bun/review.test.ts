@@ -100,4 +100,10 @@ describe('getReview diff pipeline', () => {
     // several seconds for this input. Anything sub-second proves we're not on it.
     expect(elapsed).toBeLessThan(800);
   });
+
+  test('REVIEW-4: files default to unread when nothing is marked read', async () => {
+    writeFileSync(path.join(root, 'new.ts'), `${lines(10)}\n`);
+    const model = await getReview(root, { kind: 'working' }, false);
+    expect(model.unreviewed.find((f) => f.path === 'new.ts')?.read).toBe(false);
+  });
 });

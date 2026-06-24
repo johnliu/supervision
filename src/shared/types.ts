@@ -49,6 +49,11 @@ export interface FileChange {
   staged: boolean;
   /** True for untracked (new, never-added) files. */
   untracked: boolean;
+  /** Derived on read, never persisted on the FileChange: the reviewer marked
+   * this file read and its shown content is unchanged since. Content-addressed
+   * — `.supervision/read.json` stores a hash of the new-side bytes
+   * (`newContents`), so any edit silently clears it (see bun/readState.ts). */
+  read: boolean;
 }
 
 /** Install state of the Claude Code feedback skill (user-level). */

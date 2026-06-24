@@ -19,6 +19,7 @@ import type {
   ReviewModel,
   WorktreeInfo,
 } from '../shared/types';
+import { annotateRead } from './readState';
 
 interface GitResult {
   stdout: string;
@@ -508,6 +509,7 @@ async function toFileChange(
     binary: stat.binary,
     staged,
     untracked: false,
+    read: false,
   };
 }
 
@@ -543,6 +545,7 @@ async function untrackedChange(repo: string, path: string, ignoreWhitespace: boo
     binary: stat.binary,
     staged: false,
     untracked: true,
+    read: false,
   };
 }
 
@@ -672,6 +675,7 @@ async function refChange(
     binary: stat.binary,
     staged: false,
     untracked: false,
+    read: false,
   };
 }
 
@@ -744,25 +748,31 @@ export async function getReview(
   if (!repoRoot) {
     throw new Error(`Not a git repository: ${cwd}`);
   }
+
+  let model: ReviewModel;
   if (compare.kind === 'working') {
-    return getWorkingReview(repoRoot, ignoreWhitespace);
+    model = await getWorkingReview(repoRoot, ignoreWhitespace);
+  } else {
+    // Ref comparisons have no index, so everything starts "unreviewed".
+    let files: FileChange[];
+    if (compare.kind === 'commit') {
+      files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.ref), compare.ref, ignoreWhitespace);
+    } else if (compare.head === null) {
+      files = await workingRangeChanges(repoRoot, compare.base, ignoreWhitespace);
+    } else {
+      files = await refFileChanges(repoRoot, compare.base, compare.head, ignoreWhitespace);
+    }
+    model = {
+      repoRoot,
+      compare,
+      reviewed: [],
+      unreviewed: files,
+    };
   }
 
-  // Ref comparisons have no index, so everything is "unreviewed".
-  let files: FileChange[];
-  if (compare.kind === 'commit') {
-    files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.ref), compare.ref, ignoreWhitespace);
-  } else if (compare.head === null) {
-    files = await workingRangeChanges(repoRoot, compare.base, ignoreWhitespace);
-  } else {
-    files = await refFileChanges(repoRoot, compare.base, compare.head, ignoreWhitespace);
-  }
-  return {
-    repoRoot,
-    compare,
-    reviewed: [],
-    unreviewed: files,
-  };
+  // Single exit so read state overlays every mode (the flag is content-
+  // addressed, so this is a no-op when nothing in the repo is marked read).
+  return annotateRead(repoRoot, model);
 }
 
 // History panel depth. Enough scrollback to find a recent base; not the

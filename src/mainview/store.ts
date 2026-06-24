@@ -169,6 +169,9 @@ interface ReviewState {
   setCompare: (compare: CompareSpec) => Promise<void>;
   approve: (paths: string[]) => Promise<void>;
   unapprove: (paths: string[]) => Promise<void>;
+  /** Mark/unmark files read — a per-file flag separate from approving. Marking
+   * advances to the next unread file (like approve); unmarking stays put. */
+  setRead: (paths: string[], read: boolean) => Promise<void>;
   addComment: (input: {
     path: string;
     line: number;
@@ -211,15 +214,55 @@ function pickSelection(model: ReviewModel, current: string | null, compare: Comp
 }
 
 /**
- * After staging `approvedPaths`, the unstaged file to advance to: the next one
- * after the approved block in display order, wrapping to the first remaining
- * unstaged file, or null when nothing unstaged is left.
+ * Files split into the three sidebar groups, with priority Staged > Read >
+ * Unread: a path that's staged shows only under Staged (even if it also has
+ * unstaged residue or is marked read); the rest of the unstaged bucket splits
+ * on the content-addressed `read` flag.
  */
-function nextUnstagedAfter(model: ReviewModel, approvedPaths: string[]): string | null {
-  const approved = new Set(approvedPaths);
-  const startIndex = model.unreviewed.findIndex((file) => approved.has(file.path));
-  const after = model.unreviewed.slice(startIndex + 1).find((file) => !approved.has(file.path));
-  return after?.path ?? model.unreviewed.find((file) => !approved.has(file.path))?.path ?? null;
+export function partitionFiles(model: ReviewModel): {
+  unread: FileChange[];
+  read: FileChange[];
+  staged: FileChange[];
+} {
+  const staged = model.reviewed;
+  const stagedPaths = new Set(staged.map((file) => file.path));
+  const unread: FileChange[] = [];
+  const read: FileChange[] = [];
+  for (const file of model.unreviewed) {
+    if (stagedPaths.has(file.path)) {
+      continue;
+    }
+    (file.read ? read : unread).push(file);
+  }
+  return {
+    unread,
+    read,
+    staged,
+  };
+}
+
+/**
+ * Next path in `group` (display order) after the acted-on block, wrapping to
+ * the first one still left, or null when the group has nothing else.
+ */
+function nextInGroupAfter(group: string[], actedPaths: string[]): string | null {
+  const acted = new Set(actedPaths);
+  const startIndex = group.findIndex((path) => acted.has(path));
+  const after = group.slice(startIndex + 1).find((path) => !acted.has(path));
+  return after ?? group.find((path) => !acted.has(path)) ?? null;
+}
+
+/**
+ * After acting on `paths` (approve or mark-read), the unread file to advance
+ * to: the next still-unread one in display order, wrapping around. Keeps the
+ * reviewer moving through files that still need attention — never landing on a
+ * file already read or staged.
+ */
+function nextUnreadAfter(model: ReviewModel, paths: string[]): string | null {
+  const unread = partitionFiles(model)
+    .unread.map((file) => file.path)
+    .sort(compareTreePaths);
+  return nextInGroupAfter(unread, paths);
 }
 
 /**
@@ -252,12 +295,14 @@ export function resolveThemeType(theme: ThemePreference, systemDark: boolean): '
   return theme;
 }
 
-/** Files in sidebar display order: unstaged section first, then staged. */
+/** Files in sidebar display order: unread, then read, then staged. */
 function orderedPaths(model: ReviewModel): string[] {
   const sorted = (files: FileChange[]) => files.map((file) => file.path).sort(compareTreePaths);
+  const { unread, read, staged } = partitionFiles(model);
   return [
-    ...sorted(model.unreviewed),
-    ...sorted(model.reviewed),
+    ...sorted(unread),
+    ...sorted(read),
+    ...sorted(staged),
   ];
 }
 
@@ -733,9 +778,9 @@ export const useReviewStore = create<ReviewState>((set, get) => {
 
     approve: async (paths) => {
       // Compute the advance target from the pre-stage model so we know the
-      // unstaged order before the approved files leave the list.
+      // unread order before the approved files leave the list.
       const previous = get().model;
-      const target = previous ? nextUnstagedAfter(previous, paths) : null;
+      const target = previous ? nextUnreadAfter(previous, paths) : null;
       const model = await api.stage({
         paths,
         ignoreWhitespace: get().ignoreWhitespace,
@@ -760,6 +805,29 @@ export const useReviewStore = create<ReviewState>((set, get) => {
       set({
         model,
         selectedPath: pickSelection(model, get().selectedPath, get().compare),
+      });
+    },
+
+    setRead: async (paths, read) => {
+      // Marking advances to the next unread file (computed from the pre-call
+      // model, before the file leaves the unread group); unmarking stays put.
+      const previous = get().model;
+      const target = read && previous ? nextUnreadAfter(previous, paths) : null;
+      const model = await api.setRead({
+        paths,
+        read,
+        compare: get().compare,
+        ignoreWhitespace: get().ignoreWhitespace,
+      });
+      const targetExists =
+        target !== null &&
+        [
+          ...model.unreviewed,
+          ...model.reviewed,
+        ].some((file) => file.path === target);
+      set({
+        model,
+        selectedPath: targetExists ? target : pickSelection(model, get().selectedPath, get().compare),
       });
     },
 

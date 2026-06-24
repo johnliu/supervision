@@ -161,6 +161,14 @@ const GROUPS: {
       {
         combos: [
           [
+            'm',
+          ],
+        ],
+        label: 'Mark file read / unread',
+      },
+      {
+        combos: [
+          [
             'r',
           ],
         ],
