@@ -27,7 +27,16 @@ async function waitFor(pred: () => boolean, timeout = 3000): Promise<boolean> {
   return pred();
 }
 
-const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], { cwd });
+const git = (cwd: string, args: string[]) =>
+  Bun.spawnSync(
+    [
+      'git',
+      ...args,
+    ],
+    {
+      cwd,
+    },
+  );
 
 describe('watchWorkingTree', () => {
   let root: string;
@@ -36,18 +45,40 @@ describe('watchWorkingTree', () => {
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'sv-watch-'));
-    git(root, ['init', '-q']);
-    git(root, ['config', 'user.email', 't@example.com']);
-    git(root, ['config', 'user.name', 'Tester']);
+    git(root, [
+      'init',
+      '-q',
+    ]);
+    git(root, [
+      'config',
+      'user.email',
+      't@example.com',
+    ]);
+    git(root, [
+      'config',
+      'user.name',
+      'Tester',
+    ]);
     // A committed, visible file so the repo has a tracked baseline at startup.
     writeFileSync(path.join(root, '.gitignore'), 'buildcache/\n');
     writeFileSync(path.join(root, 'README.md'), 'hi\n');
-    git(root, ['add', '.']);
-    git(root, ['commit', '-qm', 'init']);
+    git(root, [
+      'add',
+      '.',
+    ]);
+    git(root, [
+      'commit',
+      '-qm',
+      'init',
+    ]);
     changes = 0;
-    handle = watchWorkingTree(root, () => {
-      changes++;
-    }, 40);
+    handle = watchWorkingTree(
+      root,
+      () => {
+        changes++;
+      },
+      40,
+    );
     // Let chokidar finish its initial scan before we start mutating.
     await sleep(400);
   });
@@ -55,7 +86,10 @@ describe('watchWorkingTree', () => {
   afterEach(async () => {
     await handle?.close();
     handle = null;
-    await rm(root, { recursive: true, force: true });
+    await rm(root, {
+      recursive: true,
+      force: true,
+    });
   });
 
   test('WATCH-1: a git-visible change fires the debounced refresh', async () => {

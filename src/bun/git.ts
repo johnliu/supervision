@@ -622,7 +622,15 @@ async function refChange(
   entry: NameStatusEntry,
   ignoreWhitespace: boolean,
 ): Promise<FileChange> {
-  const revs = head === null ? [base] : [base, head];
+  const revs =
+    head === null
+      ? [
+          base,
+        ]
+      : [
+          base,
+          head,
+        ];
   const oldName = entry.oldPath ?? entry.path;
   const paths = entry.oldPath
     ? [
@@ -705,11 +713,7 @@ async function refFileChanges(
  * `git diff <base>` (worktree vs base, staged or not), plus untracked files —
  * which diff never reports — the same way the working review finds them.
  */
-async function workingRangeChanges(
-  repoRoot: string,
-  base: string,
-  ignoreWhitespace: boolean,
-): Promise<FileChange[]> {
+async function workingRangeChanges(repoRoot: string, base: string, ignoreWhitespace: boolean): Promise<FileChange[]> {
   const [ns, untrackedRes] = await Promise.all([
     git(repoRoot, [
       'diff',
@@ -739,11 +743,7 @@ async function workingRangeChanges(
   ];
 }
 
-export async function getReview(
-  cwd: string,
-  compare: CompareSpec,
-  ignoreWhitespace: boolean,
-): Promise<ReviewModel> {
+export async function getReview(cwd: string, compare: CompareSpec, ignoreWhitespace: boolean): Promise<ReviewModel> {
   const repoRoot = await getRepoRoot(cwd);
   if (!repoRoot) {
     throw new Error(`Not a git repository: ${cwd}`);
