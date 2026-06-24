@@ -4,7 +4,7 @@ export default {
   app: {
     name: 'Supervision',
     identifier: 'supervision.johnliu.me',
-    version: '0.1.0',
+    version: '0.2.0',
     description: 'Native code-review companion for LLM-driven development',
   },
   // Where stable releases live. Electrobun bakes this into the app and the
