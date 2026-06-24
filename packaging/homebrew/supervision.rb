@@ -24,9 +24,12 @@ cask "supervision" do
 
   app "Supervision.app"
 
-  # Put the `supervision` CLI on PATH. It ships inside the bundle (see
-  # electrobun.config.ts `copy`); Homebrew symlinks it into its bin directory.
-  binary "#{appdir}/Supervision.app/Contents/Resources/app/supervision"
+  # No `binary` stanza: electrobun's stable build packs the bundle into a
+  # .tar.zst that's only unpacked at first launch, so
+  # Contents/Resources/app/supervision doesn't exist when Homebrew makes the
+  # symlink at install time (it fails with "symlink source ... is not there").
+  # Putting the CLI on PATH needs bin/supervision installed independently of the
+  # bundle — it already self-discovers /Applications/Supervision.app.
 
   zap trash: [
     "~/.supervision",
