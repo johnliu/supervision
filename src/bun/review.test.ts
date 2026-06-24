@@ -39,6 +39,14 @@ function parse(file: { patch: string; oldContents: string; newContents: string; 
   });
 }
 
+/** Narrow a `.find()` result to non-undefined (each test asserts it exists). */
+function present<T>(value: T | undefined): T {
+  if (value === undefined) {
+    throw new Error('expected a matching file in the review model');
+  }
+  return value;
+}
+
 describe('getReview diff pipeline', () => {
   let root: string;
 
@@ -100,7 +108,7 @@ describe('getReview diff pipeline', () => {
     expect(file?.patch).toContain('@@');
     expect(file?.newContents).toContain('compute(500)');
 
-    const fd = parse(file!);
+    const fd = parse(present(file));
     // Non-partial is what unlocks collapse/expand in the renderer.
     expect(fd?.isPartial).toBe(false);
     // additionLines is the whole new file when non-partial: 40 lines.
@@ -120,7 +128,7 @@ describe('getReview diff pipeline', () => {
     const file = model.unreviewed.find((f) => f.path === 'new.ts');
     expect(file?.untracked).toBe(true);
     expect(file?.oldContents).toBe('');
-    const fd = parse(file!);
+    const fd = parse(present(file));
     expect(fd?.isPartial).toBe(false);
     expect(fd?.additionLines.length).toBe(10);
   });
@@ -151,7 +159,7 @@ describe('getReview diff pipeline', () => {
     expect(file).toBeDefined();
 
     const t0 = performance.now();
-    const fd = parse(file!);
+    const fd = parse(present(file));
     const elapsed = performance.now() - t0;
 
     expect(fd?.isPartial).toBe(false);
