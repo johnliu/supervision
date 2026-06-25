@@ -10,8 +10,8 @@
 
 import DOMPurify from 'dompurify';
 import { ImageOff, LoaderCircle } from 'lucide-react';
-import { marked } from 'marked';
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { parseObsidian } from '../../shared/obsidianMarkdown';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { renderMarkdownDiff } from './markdownDiff';
@@ -22,14 +22,7 @@ export function MarkdownPreview({ source, oldSource = '' }: { source: string; ol
     // A brand-new file gets a plain render — an all-green document carries no
     // information the file's `added` status doesn't already.
     const rich = oldSource.length > 0 && oldSource !== source;
-    return DOMPurify.sanitize(
-      rich
-        ? renderMarkdownDiff(oldSource, source)
-        : marked.parse(source, {
-            gfm: true,
-            async: false,
-          }),
-    );
+    return DOMPurify.sanitize(rich ? renderMarkdownDiff(oldSource, source) : parseObsidian(source));
   }, [
     source,
     oldSource,

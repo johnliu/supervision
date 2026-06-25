@@ -24,6 +24,7 @@
 // (DOMPurify in FilePreview.tsx), and tests can run under bun without a DOM.
 
 import { marked, type Token, type Tokens } from 'marked';
+import '../../shared/obsidianMarkdown';
 
 type Kind = 'equal' | 'added' | 'removed';
 
