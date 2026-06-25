@@ -5,6 +5,7 @@
 // behavior.
 
 import { marked } from 'marked';
+import { imageMime } from './preview';
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
@@ -18,6 +19,15 @@ function escapeAttr(s: string): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// SVG is treated as an image for embed purposes — imageMime doesn't cover it
+// (we don't render arbitrary SVG in ImagePreview), but <img src="...svg"> works.
+function isEmbedImage(target: string): boolean {
+  if (imageMime(target)) {
+    return true;
+  }
+  return target.toLowerCase().endsWith('.svg');
 }
 
 let registered = false;
@@ -90,6 +100,34 @@ function register(): void {
         },
         renderer(token) {
           return `<mark>${(token as unknown as { text: string }).text}</mark>`;
+        },
+      },
+      {
+        name: 'obsEmbed',
+        level: 'inline',
+        start(src: string): number | undefined {
+          const i = src.indexOf('![[');
+          return i === -1 ? undefined : i;
+        },
+        tokenizer(src: string) {
+          const match = /^!\[\[([^\]\n|]+)(?:\|([^\]\n]+))?\]\]/.exec(src);
+          if (!match) {
+            return undefined;
+          }
+          return {
+            type: 'obsEmbed',
+            raw: match[0],
+            target: match[1],
+            alias: match[2] ?? '',
+          };
+        },
+        renderer(token) {
+          const t = token as unknown as { target: string; alias: string };
+          const label = t.alias || t.target;
+          if (isEmbedImage(t.target)) {
+            return `<img data-embed="${escapeAttr(t.target)}" alt="${escapeAttr(label)}">`;
+          }
+          return `<span class="obs-embed-placeholder" data-embed="${escapeAttr(t.target)}">${escapeHtml(label)}</span>`;
         },
       },
       {

@@ -73,4 +73,26 @@ describe('parseObsidian', () => {
     const html = parseObsidian('See [[Note#^abc123]].\n');
     expect(html).toContain('data-anchor="^abc123"');
   });
+
+  test('OBS-8: ![[image.png]] renders an <img> with data-embed', () => {
+    const html = parseObsidian('![[diagram.png]]\n');
+    expect(html).toContain('<img');
+    expect(html).toContain('data-embed="diagram.png"');
+    expect(html).toContain('alt="diagram.png"');
+  });
+
+  test('OBS-8: image embeds recognize jpg, gif, webp, svg', () => {
+    for (const ext of ['jpg', 'gif', 'webp', 'svg']) {
+      const html = parseObsidian(`![[pic.${ext}]]\n`);
+      expect(html).toContain('<img');
+      expect(html).toContain(`data-embed="pic.${ext}"`);
+    }
+  });
+
+  test('OBS-9: ![[note.md]] (non-image) renders an embed placeholder span', () => {
+    const html = parseObsidian('![[Some Note]]\n');
+    expect(html).toContain('class="obs-embed-placeholder"');
+    expect(html).toContain('data-embed="Some Note"');
+    expect(html).toContain('Some Note');
+  });
 });
