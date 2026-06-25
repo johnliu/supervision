@@ -12,11 +12,11 @@ import DOMPurify from 'dompurify';
 import { ImageOff, LoaderCircle } from 'lucide-react';
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { parseObsidian } from '../../shared/obsidianMarkdown';
-import { useEmbedImages } from './useEmbedImages';
-import { useMermaidRender } from './useMermaidRender';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { renderMarkdownDiff } from './markdownDiff';
+import { useEmbedImages } from './useEmbedImages';
+import { useMermaidRender } from './useMermaidRender';
 
 export function MarkdownPreview({ source, oldSource = '' }: { source: string; oldSource?: string }) {
   const fontSize = useReviewStore((state) => state.fontSize);

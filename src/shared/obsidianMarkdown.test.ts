@@ -82,7 +82,12 @@ describe('parseObsidian', () => {
   });
 
   test('OBS-8: image embeds recognize jpg, gif, webp, svg', () => {
-    for (const ext of ['jpg', 'gif', 'webp', 'svg']) {
+    for (const ext of [
+      'jpg',
+      'gif',
+      'webp',
+      'svg',
+    ]) {
       const html = parseObsidian(`![[pic.${ext}]]\n`);
       expect(html).toContain('<img');
       expect(html).toContain(`data-embed="pic.${ext}"`);
@@ -104,7 +109,15 @@ describe('parseObsidian', () => {
   });
 
   test('OBS-11: each known type maps to its own modifier class', () => {
-    for (const type of ['info', 'tip', 'warning', 'danger', 'quote', 'abstract', 'example']) {
+    for (const type of [
+      'info',
+      'tip',
+      'warning',
+      'danger',
+      'quote',
+      'abstract',
+      'example',
+    ]) {
       const html = parseObsidian(`> [!${type}]\n> body\n`);
       expect(html).toContain(`obs-callout-${type}`);
     }

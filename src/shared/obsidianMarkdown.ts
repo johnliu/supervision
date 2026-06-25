@@ -9,7 +9,16 @@ import { imageMime } from './preview';
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
-const CALLOUT_TYPES = new Set(['note', 'info', 'tip', 'warning', 'danger', 'quote', 'abstract', 'example']);
+const CALLOUT_TYPES = new Set([
+  'note',
+  'info',
+  'tip',
+  'warning',
+  'danger',
+  'quote',
+  'abstract',
+  'example',
+]);
 
 function stripFrontmatter(source: string): string {
   return source.replace(FRONTMATTER, '');
@@ -105,7 +114,13 @@ function register(): void {
           };
         },
         renderer(token) {
-          return `<mark>${(token as unknown as { text: string }).text}</mark>`;
+          return `<mark>${
+            (
+              token as unknown as {
+                text: string;
+              }
+            ).text
+          }</mark>`;
         },
       },
       {
@@ -128,7 +143,10 @@ function register(): void {
           };
         },
         renderer(token) {
-          const t = token as unknown as { target: string; alias: string };
+          const t = token as unknown as {
+            target: string;
+            alias: string;
+          };
           const label = t.alias || t.target;
           if (isEmbedImage(t.target)) {
             return `<img data-embed="${escapeAttr(t.target)}" alt="${escapeAttr(label)}">`;
@@ -159,7 +177,11 @@ function register(): void {
           };
         },
         renderer(token) {
-          const t = token as unknown as { target: string; anchor: string; alias: string };
+          const t = token as unknown as {
+            target: string;
+            anchor: string;
+            alias: string;
+          };
           const display = t.alias || (t.anchor ? `${t.target}#${t.anchor}` : t.target);
           const anchorAttr = t.anchor ? ` data-anchor="${escapeAttr(t.anchor)}"` : '';
           const aliasAttr = t.alias ? ` data-alias="${escapeAttr(t.alias)}"` : '';
@@ -190,13 +212,19 @@ function register(): void {
             }
             // Strip the leading `>` and one optional space.
             bodyLines.push(line.replace(/^> ?/, ''));
-            consumed += (lineEnd === -1 ? line.length : lineEnd + 1);
+            consumed += lineEnd === -1 ? line.length : lineEnd + 1;
           }
           const body = bodyLines.join('\n');
           const inferredType = header[1].toLowerCase();
           const type = CALLOUT_TYPES.has(inferredType) ? inferredType : 'note';
           const title = (header[2] ?? '').trim();
-          const bodyTokens = (this as unknown as { lexer: { blockTokens(s: string): import('marked').Token[] } }).lexer.blockTokens(body);
+          const bodyTokens = (
+            this as unknown as {
+              lexer: {
+                blockTokens(s: string): import('marked').Token[];
+              };
+            }
+          ).lexer.blockTokens(body);
           return {
             type: 'obsCallout',
             raw: src.slice(0, consumed),
@@ -206,9 +234,19 @@ function register(): void {
           };
         },
         renderer(token) {
-          const t = token as unknown as { calloutType: string; title: string; tokens: import('marked').Token[] };
+          const t = token as unknown as {
+            calloutType: string;
+            title: string;
+            tokens: import('marked').Token[];
+          };
           const titleText = t.title || titleCase(t.calloutType);
-          const body = (this as unknown as { parser: { parse(tokens: import('marked').Token[]): string } }).parser.parse(t.tokens);
+          const body = (
+            this as unknown as {
+              parser: {
+                parse(tokens: import('marked').Token[]): string;
+              };
+            }
+          ).parser.parse(t.tokens);
           return `<div class="obs-callout obs-callout-${t.calloutType}"><div class="obs-callout-title">${escapeHtml(titleText)}</div><div class="obs-callout-body">${body}</div></div>`;
         },
       },
@@ -216,7 +254,10 @@ function register(): void {
     renderer: {
       code(token) {
         // marked's `code` token shape: { type, raw, lang, text }
-        const t = token as unknown as { lang?: string; text: string };
+        const t = token as unknown as {
+          lang?: string;
+          text: string;
+        };
         if ((t.lang ?? '').trim().toLowerCase() === 'mermaid') {
           // base64 keeps DOMPurify happy and avoids quoting headaches for
           // raw <, >, &, " in the diagram source.

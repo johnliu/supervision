@@ -8,7 +8,12 @@ import { resolveThemeType, useReviewStore } from '../store';
 
 type MermaidApi = {
   initialize(config: { startOnLoad: boolean; theme: 'dark' | 'default'; securityLevel: 'strict' }): void;
-  render(id: string, source: string): Promise<{ svg: string }>;
+  render(
+    id: string,
+    source: string,
+  ): Promise<{
+    svg: string;
+  }>;
 };
 
 let mermaidPromise: Promise<MermaidApi> | null = null;
@@ -22,7 +27,11 @@ async function loadMermaid(theme: 'dark' | 'default'): Promise<MermaidApi> {
   }
   const mermaid = await mermaidPromise;
   if (currentTheme !== theme) {
-    mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
+    mermaid.initialize({
+      startOnLoad: false,
+      theme,
+      securityLevel: 'strict',
+    });
     currentTheme = theme;
     cache.clear();
   }
@@ -45,6 +54,7 @@ export function useMermaidRender(containerRef: RefObject<HTMLElement | null>, ht
   const themeType = useReviewStore((state) => resolveThemeType(state.theme, state.systemDark));
   const mermaidTheme: 'dark' | 'default' = themeType === 'dark' ? 'dark' : 'default';
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: htmlSignal is a re-render trigger only — the effect intentionally walks the freshly-rendered DOM.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -91,5 +101,9 @@ export function useMermaidRender(containerRef: RefObject<HTMLElement | null>, ht
     return () => {
       cancelled = true;
     };
-  }, [containerRef, htmlSignal, mermaidTheme]);
+  }, [
+    containerRef,
+    htmlSignal,
+    mermaidTheme,
+  ]);
 }

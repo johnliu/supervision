@@ -5,6 +5,7 @@ import { api } from '../platform';
 // URL fetched via readFile. v1 always uses the working-tree ref (undefined);
 // per-side ref threading is a future enhancement (see design spec).
 export function useEmbedImages(containerRef: RefObject<HTMLElement | null>, htmlSignal: string): void {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: htmlSignal is a re-render trigger only — the effect intentionally walks the freshly-rendered DOM.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -21,7 +22,9 @@ export function useEmbedImages(containerRef: RefObject<HTMLElement | null>, html
         continue;
       }
       api
-        .readFile({ path })
+        .readFile({
+          path,
+        })
         .then((payload) => {
           if (cancelled || !payload.ok) {
             return;
@@ -35,5 +38,8 @@ export function useEmbedImages(containerRef: RefObject<HTMLElement | null>, html
     return () => {
       cancelled = true;
     };
-  }, [containerRef, htmlSignal]);
+  }, [
+    containerRef,
+    htmlSignal,
+  ]);
 }
