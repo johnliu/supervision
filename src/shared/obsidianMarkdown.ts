@@ -213,6 +213,20 @@ function register(): void {
         },
       },
     ],
+    renderer: {
+      code(token) {
+        // marked's `code` token shape: { type, raw, lang, text }
+        const t = token as unknown as { lang?: string; text: string };
+        if ((t.lang ?? '').trim().toLowerCase() === 'mermaid') {
+          // base64 keeps DOMPurify happy and avoids quoting headaches for
+          // raw <, >, &, " in the diagram source.
+          const encoded = btoa(unescape(encodeURIComponent(t.text)));
+          return `<div class="obs-mermaid" data-diagram="${encoded}"></div>`;
+        }
+        // false → fall through to marked's default code renderer.
+        return false;
+      },
+    },
     hooks: {
       preprocess(markdown: string): string {
         return stripFrontmatter(markdown);

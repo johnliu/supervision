@@ -128,4 +128,27 @@ describe('parseObsidian', () => {
     expect(parseObsidian('> [!note]+\n> body\n')).toContain('obs-callout-note');
     expect(parseObsidian('> [!note]-\n> body\n')).toContain('obs-callout-note');
   });
+
+  test('OBS-14: ```mermaid fences emit the obs-mermaid marker div', () => {
+    const source = '```mermaid\ngraph LR\nA --> B\n```\n';
+    const html = parseObsidian(source);
+    expect(html).toContain('class="obs-mermaid"');
+    expect(html).toContain('data-diagram="');
+    // base64 of "graph LR\nA --> B" (marked strips the trailing newline from token.text)
+    const expected = btoa('graph LR\nA --> B');
+    expect(html).toContain(`data-diagram="${expected}"`);
+  });
+
+  test('OBS-15: non-mermaid fences render as <pre><code> like before', () => {
+    const html = parseObsidian('```js\nconst x = 1;\n```\n');
+    expect(html).toContain('<pre><code class="language-js">');
+    expect(html).toContain('const x = 1;');
+    expect(html).not.toContain('obs-mermaid');
+  });
+
+  test('OBS-15: bare ``` fences with no info string render as <pre><code>', () => {
+    const html = parseObsidian('```\nplain\n```\n');
+    expect(html).toContain('<pre><code>plain');
+    expect(html).not.toContain('obs-mermaid');
+  });
 });
