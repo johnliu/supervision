@@ -10,8 +10,9 @@
 
 import DOMPurify from 'dompurify';
 import { ImageOff, LoaderCircle } from 'lucide-react';
-import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { parseObsidian } from '../../shared/obsidianMarkdown';
+import { useEmbedImages } from './useEmbedImages';
 import { api } from '../platform';
 import { useReviewStore } from '../store';
 import { renderMarkdownDiff } from './markdownDiff';
@@ -27,12 +28,15 @@ export function MarkdownPreview({ source, oldSource = '' }: { source: string; ol
     source,
     oldSource,
   ]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useEmbedImages(containerRef, html);
   return (
     <div
       data-testid="markdown-preview"
       className="min-h-0 flex-1 overflow-y-auto bg-preview"
     >
       <div
+        ref={containerRef}
         className="markdown-preview mx-auto max-w-3xl px-8 py-8"
         style={
           {
