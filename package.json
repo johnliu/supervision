@@ -42,6 +42,7 @@
     "electrobun": "1.18.1",
     "lucide-react": "^1.17.0",
     "marked": "^18.0.5",
+    "mermaid": "^11",
     "radix-ui": "^1.4.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
