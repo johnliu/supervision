@@ -95,4 +95,37 @@ describe('parseObsidian', () => {
     expect(html).toContain('data-embed="Some Note"');
     expect(html).toContain('Some Note');
   });
+
+  test('OBS-10: a simple [!note] callout renders with the callout class', () => {
+    const source = '> [!note]\n> A reminder.\n';
+    const html = parseObsidian(source);
+    expect(html).toContain('class="obs-callout obs-callout-note"');
+    expect(html).toContain('A reminder.');
+  });
+
+  test('OBS-11: each known type maps to its own modifier class', () => {
+    for (const type of ['info', 'tip', 'warning', 'danger', 'quote', 'abstract', 'example']) {
+      const html = parseObsidian(`> [!${type}]\n> body\n`);
+      expect(html).toContain(`obs-callout-${type}`);
+    }
+  });
+
+  test('OBS-12: unknown callout types fall through to the note class', () => {
+    const html = parseObsidian('> [!unknown]\n> body\n');
+    expect(html).toContain('obs-callout-note');
+  });
+
+  test('OBS-13: callout title goes into the title element, body is markdown', () => {
+    const source = '> [!warning] Watch out\n> Be **careful** here.\n> Really.\n';
+    const html = parseObsidian(source);
+    expect(html).toContain('class="obs-callout-title"');
+    expect(html).toContain('Watch out');
+    expect(html).toContain('<strong>careful</strong>');
+    expect(html).toContain('Really.');
+  });
+
+  test('OBS-13: foldable +/- syntax is accepted and ignored (always expanded)', () => {
+    expect(parseObsidian('> [!note]+\n> body\n')).toContain('obs-callout-note');
+    expect(parseObsidian('> [!note]-\n> body\n')).toContain('obs-callout-note');
+  });
 });

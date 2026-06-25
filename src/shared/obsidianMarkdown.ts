@@ -9,6 +9,8 @@ import { imageMime } from './preview';
 
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
+const CALLOUT_TYPES = new Set(['note', 'info', 'tip', 'warning', 'danger', 'quote', 'abstract', 'example']);
+
 function stripFrontmatter(source: string): string {
   return source.replace(FRONTMATTER, '');
 }
@@ -19,6 +21,10 @@ function escapeAttr(s: string): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function titleCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // SVG is treated as an image for embed purposes — imageMime doesn't cover it
@@ -158,6 +164,52 @@ function register(): void {
           const anchorAttr = t.anchor ? ` data-anchor="${escapeAttr(t.anchor)}"` : '';
           const aliasAttr = t.alias ? ` data-alias="${escapeAttr(t.alias)}"` : '';
           return `<a class="obs-wikilink" href="#" data-wikilink="${escapeAttr(t.target)}"${anchorAttr}${aliasAttr}>${escapeHtml(display)}</a>`;
+        },
+      },
+      {
+        name: 'obsCallout',
+        level: 'block',
+        start(src: string): number | undefined {
+          const m = /(^|\n)> \[!/.exec(src);
+          return m ? m.index + (m[1] ? 1 : 0) : undefined;
+        },
+        tokenizer(src: string) {
+          // Match the header line + all subsequent `> `-prefixed lines.
+          const header = /^> \[!([a-zA-Z]+)\][+-]?(?:[ \t]+([^\n]*))?\n?/.exec(src);
+          if (!header) {
+            return undefined;
+          }
+          let consumed = header[0].length;
+          const bodyLines: string[] = [];
+          while (consumed < src.length) {
+            const rest = src.slice(consumed);
+            const lineEnd = rest.indexOf('\n');
+            const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
+            if (!line.startsWith('>')) {
+              break;
+            }
+            // Strip the leading `>` and one optional space.
+            bodyLines.push(line.replace(/^> ?/, ''));
+            consumed += (lineEnd === -1 ? line.length : lineEnd + 1);
+          }
+          const body = bodyLines.join('\n');
+          const inferredType = header[1].toLowerCase();
+          const type = CALLOUT_TYPES.has(inferredType) ? inferredType : 'note';
+          const title = (header[2] ?? '').trim();
+          const bodyTokens = (this as unknown as { lexer: { blockTokens(s: string): import('marked').Token[] } }).lexer.blockTokens(body);
+          return {
+            type: 'obsCallout',
+            raw: src.slice(0, consumed),
+            calloutType: type,
+            title,
+            tokens: bodyTokens,
+          };
+        },
+        renderer(token) {
+          const t = token as unknown as { calloutType: string; title: string; tokens: import('marked').Token[] };
+          const titleText = t.title || titleCase(t.calloutType);
+          const body = (this as unknown as { parser: { parse(tokens: import('marked').Token[]): string } }).parser.parse(t.tokens);
+          return `<div class="obs-callout obs-callout-${t.calloutType}"><div class="obs-callout-title">${escapeHtml(titleText)}</div><div class="obs-callout-body">${body}</div></div>`;
         },
       },
     ],
