@@ -12,6 +12,14 @@ function stripFrontmatter(source: string): string {
   return source.replace(FRONTMATTER, '');
 }
 
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 let registered = false;
 function register(): void {
   if (registered) {
@@ -82,6 +90,36 @@ function register(): void {
         },
         renderer(token) {
           return `<mark>${(token as unknown as { text: string }).text}</mark>`;
+        },
+      },
+      {
+        name: 'obsWikilink',
+        level: 'inline',
+        start(src: string): number | undefined {
+          const i = src.indexOf('[[');
+          return i === -1 ? undefined : i;
+        },
+        tokenizer(src: string) {
+          // Embeds (![[...]]) are claimed by obsEmbed; this matches the bare
+          // wikilink form only.
+          const match = /^\[\[([^\]\n|#]+)(?:#([^\]\n|]+))?(?:\|([^\]\n]+))?\]\]/.exec(src);
+          if (!match) {
+            return undefined;
+          }
+          return {
+            type: 'obsWikilink',
+            raw: match[0],
+            target: match[1],
+            anchor: match[2] ?? '',
+            alias: match[3] ?? '',
+          };
+        },
+        renderer(token) {
+          const t = token as unknown as { target: string; anchor: string; alias: string };
+          const display = t.alias || (t.anchor ? `${t.target}#${t.anchor}` : t.target);
+          const anchorAttr = t.anchor ? ` data-anchor="${escapeAttr(t.anchor)}"` : '';
+          const aliasAttr = t.alias ? ` data-alias="${escapeAttr(t.alias)}"` : '';
+          return `<a class="obs-wikilink" href="#" data-wikilink="${escapeAttr(t.target)}"${anchorAttr}${aliasAttr}>${escapeHtml(display)}</a>`;
         },
       },
     ],

@@ -47,4 +47,30 @@ describe('parseObsidian', () => {
     expect(html).not.toContain('<mark>');
     expect(html).toContain('== lone marker');
   });
+
+  test('OBS-5: plain [[Target]] renders as an obs-wikilink span', () => {
+    const html = parseObsidian('See [[Other Note]].\n');
+    expect(html).toContain('class="obs-wikilink"');
+    expect(html).toContain('data-wikilink="Other Note"');
+    expect(html).toContain('>Other Note</a>');
+  });
+
+  test('OBS-6: [[Target|alias]] renders with alias as link text', () => {
+    const html = parseObsidian('See [[Other Note|the other one]].\n');
+    expect(html).toContain('data-wikilink="Other Note"');
+    expect(html).toContain('data-alias="the other one"');
+    expect(html).toContain('>the other one</a>');
+  });
+
+  test('OBS-7: [[Target#heading]] captures the anchor', () => {
+    const html = parseObsidian('See [[Note#Section]].\n');
+    expect(html).toContain('data-wikilink="Note"');
+    expect(html).toContain('data-anchor="Section"');
+    expect(html).toContain('>Note#Section</a>');
+  });
+
+  test('OBS-7: [[Target#^block]] captures the block anchor', () => {
+    const html = parseObsidian('See [[Note#^abc123]].\n');
+    expect(html).toContain('data-anchor="^abc123"');
+  });
 });
