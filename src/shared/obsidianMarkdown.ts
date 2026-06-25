@@ -19,6 +19,50 @@ function register(): void {
   }
   registered = true;
   marked.use({
+    extensions: [
+      {
+        name: 'obsBlockComment',
+        level: 'block',
+        start(src: string): number | undefined {
+          const m = /(^|\n)%%/.exec(src);
+          return m ? m.index + (m[1] ? 1 : 0) : undefined;
+        },
+        tokenizer(src: string) {
+          const match = /^%%[\s\S]*?%%\n?/.exec(src);
+          if (!match) {
+            return undefined;
+          }
+          return {
+            type: 'obsBlockComment',
+            raw: match[0],
+          };
+        },
+        renderer() {
+          return '';
+        },
+      },
+      {
+        name: 'obsInlineComment',
+        level: 'inline',
+        start(src: string): number | undefined {
+          const i = src.indexOf('%%');
+          return i === -1 ? undefined : i;
+        },
+        tokenizer(src: string) {
+          const match = /^%%[^\n]*?%%/.exec(src);
+          if (!match) {
+            return undefined;
+          }
+          return {
+            type: 'obsInlineComment',
+            raw: match[0],
+          };
+        },
+        renderer() {
+          return '';
+        },
+      },
+    ],
     hooks: {
       preprocess(markdown: string): string {
         return stripFrontmatter(markdown);

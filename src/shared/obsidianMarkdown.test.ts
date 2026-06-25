@@ -16,4 +16,24 @@ describe('parseObsidian', () => {
     expect(html).toContain('<hr>');
     expect(html).toContain('More.');
   });
+
+  test('OBS-2: inline %%hidden%% comments are stripped', () => {
+    const html = parseObsidian('Before %%secret%% after.\n');
+    expect(html).toContain('Before  after.');
+    expect(html).not.toContain('secret');
+  });
+
+  test('OBS-3: block %%...%% comments spanning lines are stripped', () => {
+    const source = 'Open.\n\n%%\nhidden line 1\nhidden line 2\n%%\n\nClose.\n';
+    const html = parseObsidian(source);
+    expect(html).toContain('Open.');
+    expect(html).toContain('Close.');
+    expect(html).not.toContain('hidden line');
+  });
+
+  test('OBS-3: %% inside a fenced code block is preserved', () => {
+    const source = '```\n%%not a comment%%\n```\n';
+    const html = parseObsidian(source);
+    expect(html).toContain('%%not a comment%%');
+  });
 });
