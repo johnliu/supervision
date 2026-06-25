@@ -199,4 +199,73 @@ describe('renderMarkdownDiff', () => {
     expect(html).toContain('<li class="md-li-added">two edited</li>');
     expect(html).toContain('<div class="md-block-added"><p>New trailing paragraph.</p>\n</div>');
   });
+
+  test('MDD-16: an added callout boxes as md-block-added once', () => {
+    const oldDoc = 'Intro.\n';
+    const newDoc = "Intro.\n\n> [!warning] Heads up\n> Don't do that.\n";
+    const html = renderMarkdownDiff(oldDoc, newDoc);
+    expect(counts(html)).toEqual({
+      added: 1,
+      removed: 0,
+    });
+    expect(html).toContain('obs-callout-warning');
+  });
+
+  test('MDD-17: an edited callout body shows old above new', () => {
+    const oldDoc = '> [!note]\n> Original.\n';
+    const newDoc = '> [!note]\n> Rewritten.\n';
+    const html = renderMarkdownDiff(oldDoc, newDoc);
+    expect(counts(html)).toEqual({
+      added: 1,
+      removed: 1,
+    });
+    expect(html.indexOf('Original')).toBeLessThan(html.indexOf('Rewritten'));
+  });
+
+  test('MDD-18: a highlight added in a paragraph marks the whole paragraph', () => {
+    const oldDoc = 'Hello world.\n';
+    const newDoc = 'Hello ==bright== world.\n';
+    const html = renderMarkdownDiff(oldDoc, newDoc);
+    expect(counts(html)).toEqual({
+      added: 1,
+      removed: 1,
+    });
+    expect(html).toContain('<mark>bright</mark>');
+  });
+
+  test('MDD-19: a swapped image embed boxes as a paragraph change', () => {
+    const oldDoc = '![[before.png]]\n';
+    const newDoc = '![[after.png]]\n';
+    const html = renderMarkdownDiff(oldDoc, newDoc);
+    expect(counts(html)).toEqual({
+      added: 1,
+      removed: 1,
+    });
+    expect(html).toContain('data-embed="before.png"');
+    expect(html).toContain('data-embed="after.png"');
+  });
+
+  test('MDD-20: an added mermaid diagram boxes as md-block-added with the marker', () => {
+    const oldDoc = 'Plain prose.\n';
+    const newDoc = 'Plain prose.\n\n```mermaid\ngraph LR\nA --> B\n```\n';
+    const html = renderMarkdownDiff(oldDoc, newDoc);
+    expect(counts(html)).toEqual({
+      added: 1,
+      removed: 0,
+    });
+    expect(html).toContain('class="obs-mermaid"');
+  });
+
+  test('MDD-21: an edited mermaid diagram shows both markers (old above new)', () => {
+    const oldDoc = '```mermaid\ngraph LR\nA --> B\n```\n';
+    const newDoc = '```mermaid\ngraph LR\nA --> C\n```\n';
+    const html = renderMarkdownDiff(oldDoc, newDoc);
+    expect(counts(html)).toEqual({
+      added: 1,
+      removed: 1,
+    });
+    // Both versions retain their marker div so the React effect can render
+    // each independently.
+    expect((html.match(/class="obs-mermaid"/g) ?? []).length).toBe(2);
+  });
 });
