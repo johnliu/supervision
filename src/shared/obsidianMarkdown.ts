@@ -62,6 +62,28 @@ function register(): void {
           return '';
         },
       },
+      {
+        name: 'obsHighlight',
+        level: 'inline',
+        start(src: string): number | undefined {
+          const i = src.indexOf('==');
+          return i === -1 ? undefined : i;
+        },
+        tokenizer(src: string) {
+          const match = /^==([^=\n]+?)==/.exec(src);
+          if (!match) {
+            return undefined;
+          }
+          return {
+            type: 'obsHighlight',
+            raw: match[0],
+            text: match[1],
+          };
+        },
+        renderer(token) {
+          return `<mark>${(token as unknown as { text: string }).text}</mark>`;
+        },
+      },
     ],
     hooks: {
       preprocess(markdown: string): string {

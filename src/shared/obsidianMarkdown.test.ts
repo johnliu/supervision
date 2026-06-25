@@ -36,4 +36,15 @@ describe('parseObsidian', () => {
     const html = parseObsidian(source);
     expect(html).toContain('%%not a comment%%');
   });
+
+  test('OBS-4: ==text== renders as <mark>text</mark>', () => {
+    const html = parseObsidian('A ==highlighted phrase== here.\n');
+    expect(html).toContain('<mark>highlighted phrase</mark>');
+  });
+
+  test('OBS-4: unmatched == is left as literal text', () => {
+    const html = parseObsidian('A == lone marker.\n');
+    expect(html).not.toContain('<mark>');
+    expect(html).toContain('== lone marker');
+  });
 });
