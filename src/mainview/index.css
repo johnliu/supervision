@@ -285,4 +285,74 @@
   .markdown-preview :is(li.md-li-added, li.md-li-removed) {
     @apply rounded-sm;
   }
+
+  /* Obsidian callouts (obsidianMarkdown.ts). */
+  .markdown-preview .obs-callout {
+    @apply my-3 rounded-md border-l-3 px-3 py-2;
+    background: color-mix(in oklab, var(--muted) 50%, transparent);
+  }
+  .markdown-preview .obs-callout-title {
+    @apply mb-1 font-semibold;
+  }
+  .markdown-preview .obs-callout > :is(.obs-callout-body) > :first-child {
+    @apply mt-0;
+  }
+  .markdown-preview .obs-callout > :is(.obs-callout-body) > :last-child {
+    @apply mb-0;
+  }
+  .markdown-preview .obs-callout-note {
+    border-left-color: #64748b;
+  }
+  .markdown-preview .obs-callout-info,
+  .markdown-preview .obs-callout-tip {
+    border-left-color: #0ea5e9;
+    background: color-mix(in oklab, #0ea5e9 8%, transparent);
+  }
+  .markdown-preview .obs-callout-warning {
+    border-left-color: #f59e0b;
+    background: color-mix(in oklab, #f59e0b 8%, transparent);
+  }
+  .markdown-preview .obs-callout-danger {
+    border-left-color: #ef4444;
+    background: color-mix(in oklab, #ef4444 8%, transparent);
+  }
+  .markdown-preview .obs-callout-abstract,
+  .markdown-preview .obs-callout-example,
+  .markdown-preview .obs-callout-quote {
+    border-left-color: #8b5cf6;
+    background: color-mix(in oklab, #8b5cf6 8%, transparent);
+  }
+
+  /* Obsidian wikilinks: distinct from external links so the reader knows
+     they're non-resolving (cursor stays default; no underline). */
+  .markdown-preview .obs-wikilink {
+    @apply rounded-sm px-0.5 text-primary no-underline cursor-default;
+    background: color-mix(in oklab, var(--primary) 8%, transparent);
+  }
+
+  /* Obsidian highlights. */
+  .markdown-preview mark {
+    @apply rounded-sm px-0.5;
+    background: color-mix(in oklab, #facc15 35%, transparent);
+    color: inherit;
+  }
+
+  /* Obsidian non-image embeds. */
+  .markdown-preview .obs-embed-placeholder {
+    @apply inline-block rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground;
+  }
+
+  /* Obsidian mermaid containers + error fallback. */
+  .markdown-preview .obs-mermaid {
+    @apply my-3 flex justify-center;
+  }
+  .markdown-preview .obs-mermaid svg {
+    @apply max-w-full;
+  }
+  .markdown-preview .obs-mermaid-error {
+    @apply my-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs;
+  }
+  .markdown-preview .obs-mermaid-error pre {
+    @apply mt-2 overflow-x-auto;
+  }
 }
