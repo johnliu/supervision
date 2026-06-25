@@ -19,7 +19,6 @@ function register(): void {
   }
   registered = true;
   marked.use({
-    gfm: true,
     hooks: {
       preprocess(markdown: string): string {
         return stripFrontmatter(markdown);
@@ -34,5 +33,5 @@ export function parseObsidian(source: string): string {
   return marked.parse(source, {
     gfm: true,
     async: false,
-  }) as string;
+  });
 }
