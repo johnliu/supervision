@@ -11,8 +11,8 @@
 # quarantine flag cleared once after install.)
 #
 cask "supervision" do
-  version "0.3.1"
-  sha256 "30179e4c527f45a42f6fea6f4204a0a04cc304c169f7567eceee20f14e413dbd" # shasum -a 256 stable-macos-arm64-Supervision.dmg
+  version "0.3.2"
+  sha256 "60ad441ea2552ff87c05d99965ee893a947972c7b9b7fe13ac31dea23f017349" # shasum -a 256 stable-macos-arm64-Supervision.dmg
 
   url "https://github.com/johnliu/supervision/releases/download/v#{version}/stable-macos-arm64-Supervision.dmg"
   name "Supervision"
