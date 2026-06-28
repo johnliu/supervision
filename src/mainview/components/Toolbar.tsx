@@ -287,7 +287,8 @@ export function Toolbar() {
 
       {/* Mark read — a lighter pass than approve, available in every mode
           (ref/commit modes have no staging, so this is their only progress
-          mark). Binary/deleted files have no readable content to fingerprint. */}
+          mark). Deletions count ("I've reviewed this removal"); only binary
+          files have no readable content to fingerprint. */}
       <Hint
         label={file?.read ? `Mark ${file.path} unread` : `Mark ${file?.path ?? 'file'} read`}
         keys={[
@@ -299,7 +300,7 @@ export function Toolbar() {
           size="icon-lg"
           className={CELL}
           aria-label={file?.read ? 'Mark file unread' : 'Mark file read'}
-          disabled={!file || file.binary || file.status === 'deleted'}
+          disabled={!file || file.binary}
           onClick={() =>
             file
               ? setRead(

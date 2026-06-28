@@ -79,12 +79,12 @@ export function useKeyboardShortcuts(): void {
           break;
         // Mark read works in every mode (no `working` gate). Prefer the
         // unstaged entry — the side setRead fingerprints — and skip files with
-        // no readable content (binary, deleted).
+        // no readable content (binary); deletions fingerprint their old side.
         case 'm': {
           const target =
             state.model?.unreviewed.find((file) => file.path === state.selectedPath) ??
             state.model?.reviewed.find((file) => file.path === state.selectedPath);
-          if (target && !target.binary && target.status !== 'deleted') {
+          if (target && !target.binary) {
             event.preventDefault();
             void state.setRead(
               [

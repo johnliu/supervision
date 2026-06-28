@@ -176,27 +176,44 @@ describe('read state', () => {
     expect(fileIn(await review(repo), 'app.ts')?.read).toBe(true);
   });
 
-  test('READ-6: deleted files are un-markable and do not cross-contaminate', async () => {
+  test('READ-6: deleted files mark read against their old side, no cross-contamination', async () => {
     await rm(path.join(repo, 'gone.ts'));
     await rm(path.join(repo, 'gone2.ts'));
     const model = await review(repo);
     expect(fileIn(model, 'gone.ts')?.newContents).toBe('');
 
-    // Both have empty content; without the guard, marking one would store the
-    // empty-string hash and the other would match it. The guard skips both.
+    // Both have empty new content but distinct old content, so each fingerprints
+    // to a different hash — marking one read must not flag the other.
     await markRead(
       repo,
       [
         'gone.ts',
-        'gone2.ts',
       ],
       model,
     );
 
-    expect((await readJson(repo)).files).toHaveLength(0);
+    expect((await readJson(repo)).files).toHaveLength(1);
     const after = await review(repo);
-    expect(fileIn(after, 'gone.ts')?.read).toBe(false);
+    expect(fileIn(after, 'gone.ts')?.read).toBe(true);
     expect(fileIn(after, 'gone2.ts')?.read).toBe(false);
+  });
+
+  test('READ-9: editing a deleted file (restoring it changed) clears its read flag', async () => {
+    await rm(path.join(repo, 'gone.ts'));
+    await markRead(
+      repo,
+      [
+        'gone.ts',
+      ],
+      await review(repo),
+    );
+    expect(fileIn(await review(repo), 'gone.ts')?.read).toBe(true);
+
+    // Bringing the file back with different content turns the deletion into a
+    // modification — a real new side, fingerprinted differently — so it reads
+    // as unread rather than inheriting the deletion's flag.
+    await Bun.write(path.join(repo, 'gone.ts'), 'export const gone = 99;\n');
+    expect(fileIn(await review(repo), 'gone.ts')?.read).toBe(false);
   });
 
   test('READ-7: a corrupt read.json is treated as empty (no throw)', async () => {

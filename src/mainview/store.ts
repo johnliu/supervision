@@ -86,6 +86,9 @@ interface ReviewState {
   quickOpen: boolean;
   /** Whether the Cmd+F find bar is showing. */
   search: boolean;
+  /** Bumped on every find-bar open request — including when it's already open —
+   * so pressing Cmd+F re-focuses and re-selects the input. */
+  searchFocusNonce: number;
   /** Current find-bar query (searches the visible content of any mode). */
   searchQuery: string;
   /** Searchable model of the diff currently shown (null in other modes), so
@@ -290,6 +293,32 @@ function compareTreePaths(a: string, b: string): number {
   return aSegments.length - bSegments.length;
 }
 
+/** Every agent-authored reply id across a comment list. An id that's present
+ *  after a refresh but wasn't before is fresh agent feedback. */
+function agentReplyIds(comments: Comment[]): Set<string> {
+  const ids = new Set<string>();
+  for (const comment of comments) {
+    for (const reply of comment.replies ?? []) {
+      if (reply.author === 'agent') {
+        ids.add(reply.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/** Paths of files currently marked read (across both buckets). */
+function readPaths(model: ReviewModel): Set<string> {
+  return new Set(
+    [
+      ...model.unreviewed,
+      ...model.reviewed,
+    ]
+      .filter((file) => file.read)
+      .map((file) => file.path),
+  );
+}
+
 /** The concrete palette a preference resolves to ('system' → the OS value). */
 export function resolveThemeType(theme: ThemePreference, systemDark: boolean): 'dark' | 'light' {
   if (theme === 'system') {
@@ -393,6 +422,7 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     draft: null,
     quickOpen: false,
     search: false,
+    searchFocusNonce: 0,
     searchQuery: '',
     diffSearch: null,
     settings: false,
@@ -422,6 +452,11 @@ export const useReviewStore = create<ReviewState>((set, get) => {
         error: null,
       });
       const compare = get().compare;
+      // Snapshot before the fetch so we can tell genuinely new agent feedback
+      // (a fresh reply id) from comments already present. A null previous model
+      // means this is the first load (or a repo switch) — don't resurface then.
+      const previousModel = get().model;
+      const seenAgentReplies = agentReplyIds(get().comments);
       try {
         const [model, comments, commitDetails, rangeCommits] = await Promise.all([
           api.getReview({
@@ -448,15 +483,47 @@ export const useReviewStore = create<ReviewState>((set, get) => {
                 .catch(() => [])
             : Promise.resolve([]),
         ]);
+        // New agent feedback on a file you've already marked read should pull
+        // it back to unread, so the response doesn't stay buried under "read".
+        // Skip the first load / repo switch, where every comment looks new.
+        let resolvedModel = model;
+        if (previousModel !== null) {
+          const read = readPaths(model);
+          const toUnmark = [
+            ...new Set(
+              comments
+                .filter(
+                  (comment) =>
+                    read.has(comment.path) &&
+                    (comment.replies ?? []).some(
+                      (reply) => reply.author === 'agent' && !seenAgentReplies.has(reply.id),
+                    ),
+                )
+                .map((comment) => comment.path),
+            ),
+          ];
+          if (toUnmark.length > 0) {
+            try {
+              resolvedModel = await api.setRead({
+                paths: toUnmark,
+                read: false,
+                compare,
+                ignoreWhitespace: get().ignoreWhitespace,
+              });
+            } catch {
+              // Best-effort: keep the freshly-fetched model if the unmark fails.
+            }
+          }
+        }
         set({
-          model,
+          model: resolvedModel,
           // Bun signals "no project open" with an empty repoRoot (see
           // handlers.getReview); any real repo carries its root.
-          repoOpen: model.repoRoot !== '',
+          repoOpen: resolvedModel.repoRoot !== '',
           comments,
           commitDetails,
           rangeCommits,
-          selectedPath: pickSelection(model, get().selectedPath, compare),
+          selectedPath: pickSelection(resolvedModel, get().selectedPath, compare),
           loading: false,
         });
       } catch (error) {
@@ -580,9 +647,12 @@ export const useReviewStore = create<ReviewState>((set, get) => {
     },
 
     setSearch: (open) => {
-      set({
+      set((state) => ({
         search: open,
-      });
+        // Bump on every open request, even when already open, so the find bar
+        // re-focuses; closing leaves it untouched.
+        searchFocusNonce: open ? state.searchFocusNonce + 1 : state.searchFocusNonce,
+      }));
     },
 
     setSearchQuery: (query) => {

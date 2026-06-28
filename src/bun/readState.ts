@@ -5,7 +5,8 @@
 //
 // Content-addressing: marking a file read records a hash of the exact bytes the
 // reviewer saw (the diff's new side, `newContents`, already in memory — so no
-// git calls). Every review re-derives the flag by re-hashing and comparing; any
+// git calls; a deletion has no new side, so it hashes the removed old side
+// instead). Every review re-derives the flag by re-hashing and comparing; any
 // edit silently clears it (the file resurfaces), an unchanged file stays read
 // across restarts and across compare modes. This mirrors how comments.ts flags
 // drifted comments `stale`, but keyed on content rather than a git blob sha —
@@ -45,12 +46,21 @@ function sha256(contents: string): string {
 }
 
 /**
- * The hash a file would be marked read against, or null when it can't be marked
- * — binary files and deletions have no readable new side, and an empty-string
- * hash would collide across all of them.
+ * The hash a file would be marked read against, or null when it can't be marked.
+ * Binary files have no readable content. A deletion has no new side, so it's
+ * fingerprinted against the removed bytes (the old side) — namespaced so a later
+ * re-add of the same content at the same path doesn't inherit the read flag. An
+ * empty side hashes to null rather than a shared empty-string hash that would
+ * collide across every such file.
  */
 function fingerprint(file: FileChange): string | null {
-  if (file.binary || file.newContents === '') {
+  if (file.binary) {
+    return null;
+  }
+  if (file.status === 'deleted') {
+    return file.oldContents === '' ? null : sha256(`deleted\0${file.oldContents}`);
+  }
+  if (file.newContents === '') {
     return null;
   }
   return sha256(file.newContents);
@@ -115,7 +125,7 @@ export async function annotateRead(repoRoot: string, model: ReviewModel): Promis
  * Mark `paths` read, fingerprinting against `model` (the unstaged side wins for
  * a file present in both buckets — it's the content shown by default). Replaces
  * any prior entry for those paths, so there's one entry per path. Paths that
- * can't be marked (binary/deleted, or absent from the model) are skipped.
+ * can't be marked (binary, an empty side, or absent from the model) are skipped.
  */
 export async function markRead(repoRoot: string, paths: string[], model: ReviewModel): Promise<void> {
   const targets = new Set(paths);

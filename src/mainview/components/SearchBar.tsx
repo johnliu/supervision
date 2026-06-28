@@ -153,6 +153,7 @@ function nearestCenterIndex(ranges: Range[], clip: DOMRect): number {
 
 export function SearchBar() {
   const open = useReviewStore((state) => state.search);
+  const focusNonce = useReviewStore((state) => state.searchFocusNonce);
   const setSearch = useReviewStore((state) => state.setSearch);
   const query = useReviewStore((state) => state.searchQuery);
   const setSearchQuery = useReviewStore((state) => state.setSearchQuery);
@@ -424,9 +425,10 @@ export function SearchBar() {
     ],
   );
 
-  // Open/close lifecycle. Focus+select runs ONLY on open — doing it on every
-  // query change would re-select the field after each keystroke, so only one
-  // character would ever stick.
+  // Open/close lifecycle. Focus+select runs on open and on every focusNonce
+  // bump (a re-pressed Cmd+F while already open), but NOT on query change —
+  // re-selecting after each keystroke would let only one character stick.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusNonce is a re-run trigger only — a fresh open request should re-focus even when `open` hasn't changed.
   useEffect(() => {
     if (open) {
       inputRef.current?.focus();
@@ -449,6 +451,7 @@ export function SearchBar() {
     setActive(0);
   }, [
     open,
+    focusNonce,
   ]);
 
   // Re-scan whenever the bar is open and the query/mode/file changes.

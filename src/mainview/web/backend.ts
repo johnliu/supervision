@@ -144,12 +144,13 @@ export function createFixtureBackend(fixture: FixtureData, opts: FixtureBackendO
 
   // Read is an in-memory flag in fixtures: content never changes between calls,
   // so there's nothing to re-fingerprint — just flip the flag on the matching
-  // unstaged entries (skipping ones with no readable content), like `move`.
+  // unstaged entries (skipping binary, which has no readable content), like
+  // `move`. Deletions are markable (the real side hashes their old side).
   const markRead = (paths: string[], read: boolean) => {
     model = {
       ...model,
       unreviewed: model.unreviewed.map((file) =>
-        paths.includes(file.path) && !file.binary && file.status !== 'deleted'
+        paths.includes(file.path) && !file.binary
           ? {
               ...file,
               read,
