@@ -596,15 +596,20 @@ async function getWorkingReview(repoRoot: string, ignoreWhitespace: boolean): Pr
 // git's well-known empty-tree object, used as the base for a root commit.
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
-/** The parent of `ref`, or the empty tree if `ref` is a root commit. */
-async function resolveBase(repoRoot: string, ref: string): Promise<string> {
+/** `${ref}^` when `ref` has a parent, or null when it's a root commit. */
+async function parentRev(repoRoot: string, ref: string): Promise<string | null> {
   const res = await git(repoRoot, [
     'rev-parse',
     '--verify',
     '--quiet',
     `${ref}^`,
   ]);
-  return res.exitCode === 0 ? `${ref}^` : EMPTY_TREE;
+  return res.exitCode === 0 ? `${ref}^` : null;
+}
+
+/** The parent of `ref`, or the empty tree if `ref` is a root commit. */
+async function resolveBase(repoRoot: string, ref: string): Promise<string> {
+  return (await parentRev(repoRoot, ref)) ?? EMPTY_TREE;
 }
 
 /**
@@ -753,14 +758,17 @@ export async function getReview(cwd: string, compare: CompareSpec, ignoreWhitesp
   if (compare.kind === 'working') {
     model = await getWorkingReview(repoRoot, ignoreWhitespace);
   } else {
-    // Ref comparisons have no index, so everything starts "unreviewed".
+    // Ref comparisons have no index, so everything starts "unreviewed". A range's
+    // `base`/`head` are the oldest/newest *selected* commits, both inclusive — so
+    // we diff from base's parent to show the selected commits' net change (not
+    // from base itself, which would drop the oldest selected commit's own diff).
     let files: FileChange[];
     if (compare.kind === 'commit') {
       files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.ref), compare.ref, ignoreWhitespace);
     } else if (compare.head === null) {
-      files = await workingRangeChanges(repoRoot, compare.base, ignoreWhitespace);
+      files = await workingRangeChanges(repoRoot, await resolveBase(repoRoot, compare.base), ignoreWhitespace);
     } else {
-      files = await refFileChanges(repoRoot, compare.base, compare.head, ignoreWhitespace);
+      files = await refFileChanges(repoRoot, await resolveBase(repoRoot, compare.base), compare.head, ignoreWhitespace);
     }
     model = {
       repoRoot,
@@ -820,15 +828,31 @@ export async function getLog(cwd: string): Promise<CommitInfo[]> {
   return logCommits(repoRoot, []);
 }
 
-/** Commits in `base..head`, newest first (the range-compare overview). A
- * null head means the working tree, whose commit endpoint is HEAD. */
+/** The selected commit span, newest first (the range-compare overview). `base`
+ * and `head` are the oldest/newest selected commits, both inclusive, so the list
+ * runs from base's parent up to head — matching the net diff getReview shows. A
+ * null head means the working tree, whose commit endpoint is HEAD. A root `base`
+ * has no parent, so everything up to head already includes it. */
 export async function getRangeLog(cwd: string, base: string, head: string | null): Promise<CommitInfo[]> {
   const repoRoot = await getRepoRoot(cwd);
   if (!repoRoot) {
     return [];
   }
+  const tip = head ?? 'HEAD';
+  // A base that doesn't resolve (bad ref) yields no commits — as the old
+  // `base..head` did — rather than falling through to the entire log.
+  const baseValid = await git(repoRoot, [
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    `${base}^{commit}`,
+  ]);
+  if (baseValid.exitCode !== 0) {
+    return [];
+  }
+  const from = await parentRev(repoRoot, base);
   return logCommits(repoRoot, [
-    `${base}..${head ?? 'HEAD'}`,
+    from === null ? tip : `${from}..${tip}`,
   ]);
 }
 

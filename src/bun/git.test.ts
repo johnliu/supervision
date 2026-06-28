@@ -8,6 +8,7 @@ import path from 'node:path';
 import {
   getCommitDetails,
   getRangeLog,
+  getReview,
   git,
   listBranches,
   listWorktrees,
@@ -207,16 +208,65 @@ describe('worktrees & branches (integration)', () => {
     expect(await getCommitDetails(repo, 'no-such-ref')).toBeNull();
   });
 
-  test('RNG-1: getRangeLog returns base..head newest first; null head means HEAD', async () => {
-    // History here: init → "Add b | with punctuation" (CMT-1). Range from the
-    // root commit to HEAD must contain exactly the second commit.
+  test('RNG-1: getRangeLog lists the selected span inclusive of base, newest first', async () => {
+    // History here: init → "Add b | with punctuation" (CMT-1). `base` is the
+    // oldest *selected* commit and is inclusive, so a range whose base is the
+    // root (main~1) lists BOTH commits — newest first — and null head is HEAD.
     const log = await getRangeLog(repo, 'main~1', null);
     expect(log.map((commit) => commit.subject)).toEqual([
       'Add b | with "punctuation"',
+      'init',
     ]);
-    // Empty range and bad refs read as no commits, not errors.
-    expect(await getRangeLog(repo, 'HEAD', 'HEAD')).toEqual([]);
+    // base === head spans just that one commit (inclusive of base). Unreachable
+    // from the UI — a single selection is a 'commit' compare — but it pins the
+    // inclusive contract.
+    expect((await getRangeLog(repo, 'HEAD', 'HEAD')).map((commit) => commit.subject)).toEqual([
+      'Add b | with "punctuation"',
+    ]);
+    // A base that doesn't resolve reads as no commits — not the entire log.
     expect(await getRangeLog(repo, 'no-such-ref', null)).toEqual([]);
+  });
+
+  test('RNG-2: a range diff is inclusive of the oldest selected commit', async () => {
+    // Three fresh commits, each adding one file. Selecting the span [r2, r3]
+    // must show the net of BOTH — the oldest selected commit (r2) included —
+    // not just r3 vs r2, which would drop r2's own file.
+    const commitFile = async (name: string) => {
+      await Bun.write(path.join(repo, name), `${name}\n`);
+      await git(repo, [
+        'add',
+        name,
+      ]);
+      await git(repo, [
+        'commit',
+        '-m',
+        `Add ${name}`,
+      ]);
+      return (
+        await git(repo, [
+          'rev-parse',
+          'HEAD',
+        ])
+      ).stdout.trim();
+    };
+    await commitFile('r1.txt');
+    const r2 = await commitFile('r2.txt');
+    const r3 = await commitFile('r3.txt');
+
+    const model = await getReview(
+      repo,
+      {
+        kind: 'range',
+        base: r2,
+        head: r3,
+      },
+      false,
+    );
+    const paths = model.unreviewed.map((file) => file.path).sort();
+    expect(paths).toEqual([
+      'r2.txt',
+      'r3.txt',
+    ]);
   });
 
   // A 1x1 transparent PNG — small but a real binary (NUL bytes, high bit set).
