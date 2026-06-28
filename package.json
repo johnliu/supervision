@@ -1,6 +1,6 @@
 {
   "name": "supervision",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Native code-review companion for LLM-driven development",
   "author": "John Liu <johnyuhanliu@gmail.com>",
   "license": "UNLICENSED",
